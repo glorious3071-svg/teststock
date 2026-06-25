@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "annual-direction": {
+      "command": "python",
+      "args": ["-m", "mcp_servers.annual_direction"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}
