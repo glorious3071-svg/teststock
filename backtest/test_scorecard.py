@@ -403,24 +403,48 @@ class TestStampDuty(unittest.TestCase):
         self.assertFalse(any("印花税" in it.name for it in policy_items))
 
 
+class TestRoeValuation(unittest.TestCase):
+    """v12-R1：PE 信号须结合 ROE 趋势"""
+
+    def test_pe_low_roe_rising(self):
+        inp = ScorecardInputs(cs300_pe_ttm=14.0, roe_3y_trend="rising")
+        r = evaluate_scorecard(2009, inp)
+        names = [it.name for it in r.items if it.dimension == "valuation"]
+        self.assertIn("PE<15+ROE上升(真底部)", names)
+        self.assertEqual(r.total_score, -2)
+
+    def test_pe_low_roe_declining_skips(self):
+        inp = ScorecardInputs(cs300_pe_ttm=14.0, roe_3y_trend="declining")
+        r = evaluate_scorecard(2018, inp)
+        val = [it for it in r.items if it.dimension == "valuation"]
+        self.assertEqual(val, [])
+
+    def test_pe_low_roe_flat(self):
+        inp = ScorecardInputs(cs300_pe_ttm=14.0, roe_3y_trend="flat")
+        r = evaluate_scorecard(2020, inp)
+        names = [it.name for it in r.items if it.dimension == "valuation"]
+        self.assertIn("PE<15+ROE平稳", names)
+        self.assertEqual(r.total_score, -1)
+
+
 class TestNationalTeamAction(unittest.TestCase):
     """v3.4.9：国家队入场评分规则单测（独立单测，不需数据库）"""
 
     def test_entry_adds_opportunity(self):
-        """national_team_action='entry' → policy -2（强信号，与 pboc_tone 同级）"""
+        """national_team_action='entry' → policy -1（v12-M1 反死锚：原 -2 降为 -1）"""
         inp = ScorecardInputs(national_team_action="entry")
         r = evaluate_scorecard(2009, inp)
         names = [it.name for it in r.items if it.dimension == "policy"]
         self.assertIn("国家队入场", names)
-        self.assertEqual(r.total_score, -2)
+        self.assertEqual(r.total_score, -1)
 
     def test_exit_adds_risk(self):
-        """national_team_action='exit' → policy +2（极罕见反向信号）"""
+        """national_team_action='exit' → policy +1（v12-M1 反死锚）"""
         inp = ScorecardInputs(national_team_action="exit")
         r = evaluate_scorecard(2025, inp)
         names = [it.name for it in r.items if it.dimension == "policy"]
         self.assertIn("国家队减持", names)
-        self.assertEqual(r.total_score, +2)
+        self.assertEqual(r.total_score, +1)
 
     def test_none_skips(self):
         """national_team_action=None → 不触发"""

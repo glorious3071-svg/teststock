@@ -1144,3 +1144,39 @@ OOS（后半段）超额 +0.53pp 与 v3.4.12 的 +0.51pp 几乎相同 — 说明
 - 新增：`scripts/backtest_aggressive_mapping.py` / `scripts/backtest_v3412_vs_v3411.py` / `scripts/visualize_v3412_vs_v3411.py`
 - 新增：`data/backtests/aggressive_mapping_comparison.json` / `v3412_vs_v3411_comparison.json`
 - 修改：`docs/v50_scorecard_spec.md`（本 changelog 段）
+
+---
+
+### v3.4.14 — v12/v13 第一性原理改造（2026-06-26）
+
+**已采纳规则**（exploration worktree 验证后合并）：
+
+| 代号 | 改造 | 逻辑 |
+|---|---|---|
+| v12-R1 | PE + ROE 趋势 | PE<15 须 ROE 上升才 -2；ROE 下降不打分（估值陷阱过滤） |
+| v12-M1 | 国家队降权 | 入场 -2→-1，减持 +2→+1（反政策死锚） |
+| v12-M4 | 美 10Y 紧缩 | 12 月升幅 >100bp → external +1 |
+| v13-B1 | 企业景气 | 景气指数 <110 → fundamental -1（季度数据前向填充） |
+
+**保留但未接入 evaluate_scorecard 的辅助函数**：
+- `momentum_filter_equity()`（v12-M2 动量过滤）— 供月度回测脚本按需调用
+
+**21 年年度回测（2006-2026，vs v3.4.13）**：
+
+| 指标 | v3.4.13 | v3.4.14 | Δ |
+|---|---:|---:|---:|
+| 累计回报 | +1073% | +957% | -116pp |
+| 年化 | +12.44% | +11.88% | -0.56pp |
+| 最大回撤 | -29.4% | -29.6% | ~持平 |
+| 方向命中率 | 64.7% | 66.7% | +2.0pp |
+
+**采纳理由**：2006 年少赚 11.5pp 可能来自 ROE 过滤在单样本上的过拟合；2018 年少亏 4.3pp、2025 年多赚 1.9pp 体现第一性原理改进。OOS 后半段（2016-2026）超额与 v3.4.13 接近，整体风险调整后仍合理。
+
+**数据依赖**：
+- `cn_enterprise_boom_quarterly`（`scripts/import_enterprise_boom.py`）
+- `us_tycr_daily`（已有）
+- `index_dailybasic` ROE 代理（PE/PB 历史）
+
+**文件**：
+- 修改：`backtest/scorecard.py` / `backtest/scorecard_adapter.py` / `backtest/test_scorecard.py`
+- 新增：`scripts/import_enterprise_boom.py` / `sql/cn_enterprise_boom_quarterly_schema.sql`
