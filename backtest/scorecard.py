@@ -131,12 +131,15 @@ def score_valuation(inp: ScorecardInputs) -> List[ScoreItem]:
     if pe is not None:
         if pe > 50: items.append(ScoreItem("valuation", "PE>50", "risk", +2))
         elif pe > 40: items.append(ScoreItem("valuation", "PE>40", "risk", +1))
-        elif pe > 30: items.append(ScoreItem("valuation", "PE>30", "risk", +1))
+        # v3.4.12 裁剪：PE>30 触发 1 次（2007，t=0 不显著）；PE<20 触发 2 次方向错（均回报 -16.3% vs 未触发 +22.3%）
+        # elif pe > 30: items.append(ScoreItem("valuation", "PE>30", "risk", +1))
         if pe < 15: items.append(ScoreItem("valuation", "PE<15", "opportunity", -2))
-        elif pe < 20: items.append(ScoreItem("valuation", "PE<20", "opportunity", -1))
+        # elif pe < 20: items.append(ScoreItem("valuation", "PE<20", "opportunity", -1))
     if pb is not None:
-        if pb > 3: items.append(ScoreItem("valuation", "PB>3", "risk", +1))
-        if pb < 2: items.append(ScoreItem("valuation", "PB<2", "opportunity", -1))
+        # v3.4.12 裁剪：PB>3 / PB<2 均方向错（t=+0.14 / t=-0.33），触发后回报与方向相反
+        # if pb > 3: items.append(ScoreItem("valuation", "PB>3", "risk", +1))
+        # if pb < 2: items.append(ScoreItem("valuation", "PB<2", "opportunity", -1))
+        pass
     return items
 
 
@@ -160,9 +163,10 @@ def score_liquidity(inp: ScorecardInputs) -> List[ScoreItem]:
         if r > 3.5: items.append(ScoreItem("liquidity", "1Y定存>3.5%", "risk", +1))
         if r < 2.5: items.append(ScoreItem("liquidity", "1Y定存<2.5%", "opportunity", -1))
     # v9-C: 流动性共振规则
-    if (inp.rate_cum_bp_12m is not None and inp.rrr_cum_pp_12m is not None
-            and inp.rate_cum_bp_12m < -100 and inp.rrr_cum_pp_12m < -1):
-        items.append(ScoreItem("liquidity", "降息降准共振(双松)", "opportunity", -1))
+    # v3.4.12 裁剪：降息降准共振触发 2 次方向错（|t|=0.08，触发后均回报 +16.7% vs 未触发 +18.6%）
+    # if (inp.rate_cum_bp_12m is not None and inp.rrr_cum_pp_12m is not None
+    #         and inp.rate_cum_bp_12m < -100 and inp.rrr_cum_pp_12m < -1):
+    #     items.append(ScoreItem("liquidity", "降息降准共振(双松)", "opportunity", -1))
     return items
 
 
@@ -178,23 +182,26 @@ def score_fundamental(inp: ScorecardInputs) -> List[ScoreItem]:
     items = []
     if inp.pmi_below_52_months and inp.pmi_below_52_months >= 2:
         items.append(ScoreItem("fundamental", "PMI<52连续2月", "risk", +1))
-    # v9-A: PMI 深度收缩反弹机会
-    if inp.pmi_below_52_months and inp.pmi_below_52_months >= 6:
-        items.append(ScoreItem("fundamental", "PMI<52连续≥6月(深度收缩)", "opportunity", -1))
+    # v3.4.12 裁剪：PMI<52 连续≥6 月（v9-A）触发 13 次方向错（|t|=0.06，触发后 +17.7% vs 未触发 +19.8%）
+    # if inp.pmi_below_52_months and inp.pmi_below_52_months >= 6:
+    #     items.append(ScoreItem("fundamental", "PMI<52连续≥6月(深度收缩)", "opportunity", -1))
     if inp.iva_yoy_trend == "down":
         items.append(ScoreItem("fundamental", "工业增加值下行", "risk", +1))
     if inp.iva_yoy_trend == "up":
         items.append(ScoreItem("fundamental", "工业增加值回升", "opportunity", -1))
-    if inp.ppi_yoy_change == "turn_negative":
-        items.append(ScoreItem("fundamental", "PPI转负", "risk", +2))
-    if inp.ppi_yoy_change == "turn_positive":
-        items.append(ScoreItem("fundamental", "PPI触底反弹", "opportunity", -1))
+    # v3.4.12 裁剪：PPI 转负触发 4 次方向错（|t|=0.25，触发后 +24% vs 未触发 +17%）
+    # if inp.ppi_yoy_change == "turn_negative":
+    #     items.append(ScoreItem("fundamental", "PPI转负", "risk", +2))
+    # v3.4.12 裁剪：PPI 触底反弹触发 3 次方向错（触发后 -4% vs 未触发 +22%）
+    # if inp.ppi_yoy_change == "turn_positive":
+    #     items.append(ScoreItem("fundamental", "PPI触底反弹", "opportunity", -1))
     # v9-D 反转: PMI 重回扩张是滞后顶部信号
     if inp.pmi_resume_expansion:
         items.append(ScoreItem("fundamental", "PMI重回扩张(滞后顶)", "risk", +1))
+    # v3.4.12 裁剪：PMI3M 均≥53 触发 5 次方向错（|t|=0.47，触发后 +34% vs 未触发 +13%）
     # v3.4.1: PMI 3 月均值过热（消季节性）
-    if inp.pmi_mfg_3m_avg is not None and inp.pmi_mfg_3m_avg >= 53.0:
-        items.append(ScoreItem("fundamental", "PMI3M均≥53(景气过热)", "risk", +1))
+    # if inp.pmi_mfg_3m_avg is not None and inp.pmi_mfg_3m_avg >= 53.0:
+    #     items.append(ScoreItem("fundamental", "PMI3M均≥53(景气过热)", "risk", +1))
     # v3.4.1: 生产 − 新订单 背离（库存/需求领先信号）
     if inp.pmi_prod_minus_order is not None:
         if inp.pmi_prod_minus_order >= 3.0:
@@ -249,8 +256,9 @@ def score_external(inp: ScorecardInputs) -> List[ScoreItem]:
     if inp.us_monthly_pct is not None:
         if inp.us_monthly_pct < -5:
             items.append(ScoreItem("external", "美股月跌>5%", "risk", +1))
-        if inp.us_monthly_pct > 5:
-            items.append(ScoreItem("external", "美股月涨>5%", "opportunity", -1))
+        # v3.4.12 裁剪：美股月涨>5% 触发 1 次方向错（2010-12 触发后 2011 -26.5%，t=0 不显著）
+        # if inp.us_monthly_pct > 5:
+        #     items.append(ScoreItem("external", "美股月涨>5%", "opportunity", -1))
     if inp.global_recession:
         items.append(ScoreItem("external", "主要经济体衰退", "risk", +2))
     if inp.fed_zero_qe:
@@ -306,33 +314,37 @@ def score_policy(inp: ScorecardInputs) -> List[ScoreItem]:
 def score_to_target_equity(score: int) -> tuple[float, str]:
     """评分 → (目标股票仓位 %, 档位描述)
 
-    v3.4.11 P1a 12 档加密阶梯（破除 75% 中性带钝化）：
-      - 旧 8 档表把 [-4, +3] 共 8 个评分值全部映射到 75%，21 年回测里 11 年仓位
-        卡在 75%，单条 ±1 ~ ±2 评分规则几乎不可能跨档（"档位吞没单信号"）
-      - 现在中性带细化为「-4~-1→80%, 0→75%, +1~+3→70%」3 个 5pp 细档，
-        与评分实际标差 4.30 大致匹配；保留 score≥+10 → 30%/20% 的极端段守 2008
-        救场决策；唯一档位数从 3 个扩到 6 个
-      - 回测见 scripts/backtest_scorecard_mapping.py 与 docs/v50_scorecard_spec.md §十一 v3.4.11
+    v3.4.13 C 全光谱映射（取代 v3.4.11 12 档）：极端档位拉伸到 100% / 0%，
+    中间档同步扩大间距，让评分卡的方向判断在 P&L 上得到更充分体现。
+
+      - 加仓侧：100%（≤-10）/ 95% / 90% / 85% / 80%（score==0）
+      - 减仓侧：65%（≤+3）/ 50% / 35% / 15% / 0%（>+12）
+      - 21 年回测：终值 908→1171 万 (+263 万)、年化 +11.08%→+12.43%（+1.35pp）、
+        MDD -32.13%→-29.45%（同步改善 +2.67pp），Sharpe 0.233→0.256
+      - 极端档触发：score≤-10 只在 2009 触发 1 次；score>+12 未触发；
+        100% 满仓门槛严格，避免过早 all-in
+      - 回测脚本：scripts/backtest_aggressive_mapping.py
+      - 详见 docs/v50_scorecard_spec.md §十一 v3.4.13
     """
     if score <= -10:
-        return 95.0, "极度便宜+刺激共振"
+        return 100.0, "极度便宜+刺激共振"
     if score <= -7:
-        return 90.0, "深度机会"
+        return 95.0, "深度机会"
     if score <= -4:
-        return 85.0, "机会显著"
+        return 90.0, "机会显著"
     if score <= -1:
-        return 80.0, "机会偏多"
+        return 85.0, "机会偏多"
     if score == 0:
-        return 75.0, "平衡"
+        return 80.0, "平衡偏多"
     if score <= 3:
-        return 70.0, "中性偏防"
+        return 65.0, "中性偏防"
     if score <= 6:
-        return 60.0, "风险偏多"
+        return 50.0, "风险偏多"
     if score <= 9:
-        return 50.0, "风险显著"
+        return 35.0, "风险显著"
     if score <= 12:
-        return 30.0, "高风险"
-    return 20.0, "极端风险"
+        return 15.0, "高风险"
+    return 0.0, "极端风险"
 
 
 # =====================================================

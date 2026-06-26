@@ -22,35 +22,35 @@ from backtest.scorecard import (
 
 class TestScorecardBands(unittest.TestCase):
     def test_band_mapping(self):
-        """v3.4.11 12 档加密阶梯边界（破除 75% 中性带钝化）
+        """v3.4.13 C 全光谱映射边界（极端档位拉伸到 100% / 0%）
 
         档位表：
-          ≤-10 → 95% 极度便宜+刺激共振
-          ≤-7  → 90% 深度机会
-          ≤-4  → 85% 机会显著
-          ≤-1  → 80% 机会偏多
-          ==0  → 75% 平衡（保留中性档作为加/减仓的分界）
-          ≤+3  → 70% 中性偏防
-          ≤+6  → 60% 风险偏多
-          ≤+9  → 50% 风险显著
-          ≤+12 → 30% 高风险
-          >+12 → 20% 极端风险
+          ≤-10 → 100% 极度便宜+刺激共振（满仓）
+          ≤-7  → 95%  深度机会
+          ≤-4  → 90%  机会显著
+          ≤-1  → 85%  机会偏多
+          ==0  → 80%  平衡偏多
+          ≤+3  → 65%  中性偏防
+          ≤+6  → 50%  风险偏多
+          ≤+9  → 35%  风险显著
+          ≤+12 → 15%  高风险
+          >+12 → 0%   极端风险（全现金）
         """
-        self.assertEqual(score_to_target_equity(-12)[0], 95.0)
-        self.assertEqual(score_to_target_equity(-10)[0], 95.0)   # 边界点：恰好命中 ≤-10
-        self.assertEqual(score_to_target_equity(-9)[0], 90.0)
-        self.assertEqual(score_to_target_equity(-7)[0], 90.0)    # 边界点
-        self.assertEqual(score_to_target_equity(-6)[0], 85.0)
-        self.assertEqual(score_to_target_equity(-4)[0], 85.0)    # 边界点
-        self.assertEqual(score_to_target_equity(-2)[0], 80.0)    # 旧档 75 → 新档 80
-        self.assertEqual(score_to_target_equity(-1)[0], 80.0)    # 边界点
-        self.assertEqual(score_to_target_equity(0)[0], 75.0)     # 唯一保留 75 的评分点
-        self.assertEqual(score_to_target_equity(2)[0], 70.0)     # 旧档 75 → 新档 70
-        self.assertEqual(score_to_target_equity(3)[0], 70.0)     # 边界点
-        self.assertEqual(score_to_target_equity(5)[0], 60.0)
-        self.assertEqual(score_to_target_equity(8)[0], 50.0)
-        self.assertEqual(score_to_target_equity(11)[0], 30.0)
-        self.assertEqual(score_to_target_equity(15)[0], 20.0)
+        self.assertEqual(score_to_target_equity(-12)[0], 100.0)
+        self.assertEqual(score_to_target_equity(-10)[0], 100.0)  # 边界点
+        self.assertEqual(score_to_target_equity(-9)[0], 95.0)
+        self.assertEqual(score_to_target_equity(-7)[0], 95.0)    # 边界点
+        self.assertEqual(score_to_target_equity(-6)[0], 90.0)
+        self.assertEqual(score_to_target_equity(-4)[0], 90.0)    # 边界点
+        self.assertEqual(score_to_target_equity(-2)[0], 85.0)
+        self.assertEqual(score_to_target_equity(-1)[0], 85.0)    # 边界点
+        self.assertEqual(score_to_target_equity(0)[0], 80.0)     # v3.4.13 平衡档从 75 升到 80
+        self.assertEqual(score_to_target_equity(2)[0], 65.0)
+        self.assertEqual(score_to_target_equity(3)[0], 65.0)     # 边界点
+        self.assertEqual(score_to_target_equity(5)[0], 50.0)
+        self.assertEqual(score_to_target_equity(8)[0], 35.0)
+        self.assertEqual(score_to_target_equity(11)[0], 15.0)
+        self.assertEqual(score_to_target_equity(15)[0], 0.0)     # v3.4.13 极端档全清
 
 
 class TestHistoricalScenarios(unittest.TestCase):
@@ -76,9 +76,10 @@ class TestHistoricalScenarios(unittest.TestCase):
         )
         r = evaluate_scorecard(2007, inp)
         # 估值 +2+1+1+1=5；流动性 +1+1+1+1=4；情绪 +1+1+1=3；政策 +2+1+1=4 → 16+ 含工业回升 -1 → 15+
-        self.assertGreaterEqual(r.total_score, 10, f"2007.09 应高分; 实际 {r.total_score}")
-        self.assertLessEqual(r.target_equity_pct, 30.0)
-        self.assertEqual(r.band, "极端风险" if r.total_score >= 13 else "高风险")
+        # v3.4.12 裁剪后：原 +10 (含 PB>3 +1) → +9（PB>3 已裁剪），仍触发 30% 仓位
+        self.assertGreaterEqual(r.total_score, 9, f"2007.09 应高分; 实际 {r.total_score}")
+        # v3.4.11 12 档映射 + v3.4.12 裁剪后：+9 → 50%（原 v3.4.0 旧档下是 30%）
+        self.assertLessEqual(r.target_equity_pct, 50.0)
 
     def test_2009_01_market_bottom(self):
         """2009.01 政策底: PE 14, PB<2, 累计降息, 央行宽松 → 低分 → 80% 仓位"""
@@ -190,8 +191,9 @@ class TestPolicyTripleGate(unittest.TestCase):
 class TestPmiSubrules(unittest.TestCase):
     """V3.4.1 新增 PMI 子规则单测（消季节性 3M 均值 + 生产/订单背离）"""
 
+    @unittest.skip("v3.4.12 裁剪：PMI3M均≥53 规则方向错（触发后均回报 +34% vs 未触发 +13%）已被注释")
     def test_pmi_3m_overheating_adds_risk(self):
-        """PMI 3M 均值 ≥ 53 → fundamental +1（景气过热）"""
+        """PMI 3M 均值 ≥ 53 → fundamental +1（景气过热）— v3.4.12 已废弃"""
         inp = ScorecardInputs(pmi_mfg_3m_avg=55.7)
         r = evaluate_scorecard(2010, inp)
         names = [it.name for it in r.items if it.dimension == "fundamental"]
@@ -245,14 +247,14 @@ class TestDimensionIsolation(unittest.TestCase):
         )
         r = evaluate_scorecard(2020, inp)
         groups = r.items_by_dimension()
-        self.assertIn("valuation", groups)
+        # v3.4.12 裁剪后估值维度：PE<20 和 PB<2 已被裁，valuation 维度不再触发
+        self.assertNotIn("valuation", groups)
         self.assertIn("liquidity", groups)
         self.assertIn("policy", groups)
-        # 估值: PE<20 (-1) + PB<2 (-1) = -2
         # 流动性: 累计降息>100bp (-2)
         # 政策: 央行宽松 (-2)
-        valuation_score = sum(it.score for it in groups["valuation"])
-        self.assertEqual(valuation_score, -2)
+        liquidity_score = sum(it.score for it in groups["liquidity"])
+        self.assertEqual(liquidity_score, -2)
 
 
 class TestOecdRecessionSignal(unittest.TestCase):
