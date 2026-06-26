@@ -1,6 +1,7 @@
-"""scorecard_adapter.py — MySQL → ScorecardInputs 适配器（v3.4.1 + us_monthly_pct + global_recession）
+"""scorecard_adapter.py — MySQL → ScorecardInputs 适配器（v3.4.14 + v12/v13 字段）
 
-覆盖估值 + 流动性 + 基本面 + 部分外部（us_monthly_pct + global_recession）字段。
+覆盖估值 + 流动性 + 基本面 + 部分外部（us_monthly_pct + global_recession）字段，
+以及 v12-R1（ROE 趋势）、v12-M4（美 10Y 变化）、v13-B1（企业景气）等已采纳规则所需输入。
 情绪 / 政策 / 外部其余字段保留 None（评分时跳过），保证 baseline 与 candidate
 在同一份"非候选维度"基线上比较，公平地隔离候选规则的边际效果。
 
@@ -614,6 +615,118 @@ def _ppi_yoy_and_change(cur, snapshot_month: str) -> tuple[float | None, str | N
     return cur_val, "flat"
 
 
+def _roe_implied_and_trend(
+    cur, ts_code: str, snapshot_date: date,
+) -> tuple[float | None, str | None]:
+    """v12-R1: 隐含 ROE 及 3 年趋势（rising/flat/declining）"""
+    three_y_ago = snapshot_date - timedelta(days=365 * 3)
+    cur.execute(
+        """
+        SELECT pe_ttm, pb FROM index_dailybasic
+        WHERE ts_code = %s AND trade_date BETWEEN %s AND %s
+          AND pe_ttm > 0 AND pb > 0
+        ORDER BY trade_date
+        """,
+        (ts_code, three_y_ago, snapshot_date),
+    )
+    rows = cur.fetchall()
+    if len(rows) < 60:
+        return None, None
+    roes = [float(r[1]) / float(r[0]) * 100.0 for r in rows]
+    recent = roes[-120:] if len(roes) >= 120 else roes
+    prior = roes[:120] if len(roes) >= 120 else roes[: len(roes) // 2]
+    roe_now = sum(recent) / len(recent)
+    roe_prior = sum(prior) / len(prior)
+    diff = roe_now - roe_prior
+    trend = "rising" if diff > 1.0 else ("declining" if diff < -1.0 else "flat")
+    return roe_now, trend
+
+
+def _enterprise_boom_index(cur, snapshot_date: date) -> float | None:
+    """v13-B1: 企业景气指数（季度，取 snapshot 前最近一季）"""
+    cur.execute(
+        """
+        SELECT boom_index FROM cn_enterprise_boom_quarterly
+        WHERE quarter_date <= %s AND boom_index IS NOT NULL
+        ORDER BY quarter_date DESC LIMIT 1
+        """,
+        (snapshot_date,),
+    )
+    row = cur.fetchone()
+    return float(row[0]) if row and row[0] is not None else None
+
+
+def _us10y_chg_12m_bp(cur, snapshot_date: date) -> float | None:
+    """v12-M4: 美 10Y 名义收益率 12 月变化（bp）"""
+    one_year_ago = snapshot_date - timedelta(days=365)
+    cur.execute(
+        """
+        SELECT y10 FROM us_tycr_daily
+        WHERE trade_date <= %s AND y10 IS NOT NULL
+        ORDER BY trade_date DESC LIMIT 1
+        """,
+        (snapshot_date,),
+    )
+    cur_row = cur.fetchone()
+    cur.execute(
+        """
+        SELECT y10 FROM us_tycr_daily
+        WHERE trade_date <= %s AND y10 IS NOT NULL
+        ORDER BY trade_date DESC LIMIT 1
+        """,
+        (one_year_ago,),
+    )
+    prior_row = cur.fetchone()
+    if not (cur_row and prior_row and cur_row[0] is not None and prior_row[0] is not None):
+        return None
+    return (float(cur_row[0]) - float(prior_row[0])) * 100.0
+
+
+def _cs300_6m_return(cur, ts_code: str, snapshot_date: date) -> float | None:
+    """v12-M2: CS300 过去 6 月累计收益 %（供 momentum_filter 使用）"""
+    six_mo_ago = snapshot_date - timedelta(days=183)
+    cur.execute(
+        """
+        SELECT close FROM index_daily
+        WHERE ts_code = %s AND trade_date <= %s
+        ORDER BY trade_date DESC LIMIT 1
+        """,
+        (ts_code, snapshot_date),
+    )
+    cur_row = cur.fetchone()
+    cur.execute(
+        """
+        SELECT close FROM index_daily
+        WHERE ts_code = %s AND trade_date <= %s
+        ORDER BY trade_date DESC LIMIT 1
+        """,
+        (ts_code, six_mo_ago),
+    )
+    prior_row = cur.fetchone()
+    if not (cur_row and prior_row and cur_row[0] is not None and prior_row[0] is not None):
+        return None
+    return (float(cur_row[0]) / float(prior_row[0]) - 1.0) * 100.0
+
+
+def _cs300_pe_p20_60m(cur, ts_code: str, snapshot_date: date) -> float | None:
+    """v12-M3: PE 60 月滚动 P20"""
+    five_y_ago = snapshot_date - timedelta(days=365 * 5)
+    cur.execute(
+        """
+        SELECT pe_ttm FROM index_dailybasic
+        WHERE ts_code = %s AND trade_date BETWEEN %s AND %s
+          AND pe_ttm IS NOT NULL
+        """,
+        (ts_code, five_y_ago, snapshot_date),
+    )
+    pes = [float(r[0]) for r in cur.fetchall() if r[0] is not None]
+    if len(pes) < 200:
+        return None
+    pes.sort()
+    idx = int(len(pes) * 0.20)
+    return pes[idx]
+
+
 # ──────────────────────────────────────────────────────────────────
 # 主入口：构造 ScorecardInputs
 # ──────────────────────────────────────────────────────────────────
@@ -635,6 +748,10 @@ class AdapterOptions:
     include_property_policy: bool = False          # v3.4.10 REJECT：+bidir 累计回报 -3.00pp（2016 loosen 加仓+地产周期与 A 股 mismatch）/ +loose_only -1.45pp；保留实现供未来重启
     property_policy_min_intensity: str = "strong"  # 'strong'（仅大转向）/ 'normal'（含局部调整）
     property_policy_mode: str = "bidir"            # 'bidir'（双向 ±1）/ 'loose_only'（仅 loosen -1，tighten 视为 None）
+    include_roe_trend: bool = True                 # v12-R1 已采纳：PE 信号结合 ROE 趋势，避免估值陷阱
+    include_enterprise_boom: bool = True           # v13-B1 已采纳：企业景气 <110 → -1 机会
+    include_us10y_chg: bool = True                   # v12-M4 已采纳：美 10Y 12 月升 >100bp → +1 风险
+    include_momentum_fields: bool = True             # v12-M2/M3：加载 cs300_6m_return / pe_p20（供动量过滤脚本）
 
 
 def load_scorecard_inputs(
@@ -721,6 +838,23 @@ def load_scorecard_inputs(
                     property_policy = _raw_property if _raw_property == "loosen" else None
                 else:  # 'bidir'
                     property_policy = _raw_property
+
+            roe_implied, roe_trend = (
+                _roe_implied_and_trend(cur, cs300_code, snapshot_date)
+                if opts.include_roe_trend else (None, None)
+            )
+            enterprise_boom = (
+                _enterprise_boom_index(cur, snapshot_date)
+                if opts.include_enterprise_boom else None
+            )
+            us10y_chg = (
+                _us10y_chg_12m_bp(cur, snapshot_date)
+                if opts.include_us10y_chg else None
+            )
+            cs300_6m = pe_p20 = None
+            if opts.include_momentum_fields:
+                cs300_6m = _cs300_6m_return(cur, cs300_code, snapshot_date)
+                pe_p20 = _cs300_pe_p20_60m(cur, cs300_code, snapshot_date)
     finally:
         if own_conn:
             conn.close()
@@ -751,5 +885,12 @@ def load_scorecard_inputs(
         central_meeting_tone=meeting_tone,
         national_team_action=national_team,
         property_policy=property_policy,
+        # v12/v13 新增字段
+        roe_implied=roe_implied,
+        roe_3y_trend=roe_trend,
+        enterprise_boom_index=enterprise_boom,
+        us10y_chg_12m_bp=us10y_chg,
+        cs300_6m_return=cs300_6m,
+        cs300_pe_p20_60m=pe_p20,
         # 情绪 / 外部其余 — 不接入（保持 baseline / candidate 同等空白）
     )

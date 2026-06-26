@@ -92,6 +92,20 @@ class ScorecardInputs:
     gold_yoy_pct: float | None = None          # v11-G: 黄金 YoY %（全球流动性代理）
     vix_30d_avg: float | None = None           # v11-V: VIX 月均（恐慌指数）
     fed_rate_level: float | None = None        # v11-F: FED rate 绝对水平 %
+    us10y_chg_12m_bp: float | None = None      # v12-M4: 美 10Y 12 月变化 bp（>+100=紧缩周期风险）
+
+    # 价格动量（v12-M2: 动量过滤）
+    cs300_6m_return: float | None = None       # v12-M2: CS300 过去 6 月累计收益%（用于过滤"估值便宜但已大涨"的伪机会）
+
+    # 估值分位（v12-M3: 双确认）
+    cs300_pe_p20_60m: float | None = None      # v12-M3: PE 60 月滚动 P20（用于"真便宜"双确认）
+
+    # 第一性原理 — ROE（v12-R1: 盈利能力层）
+    roe_implied: float | None = None           # v12-R1: 隐含 ROE = PB / PE_TTM × 100（衡量企业实际盈利能力）
+    roe_3y_trend: str | None = None            # v12-R1: ROE 3 年趋势 'rising'/'flat'/'declining'（决定 PE 信号的有效性）
+
+    # 企业信心（v13-B1: 第一性原理新维度）
+    enterprise_boom_index: float | None = None  # v13-B1: 企业景气指数（季度，100=荣枯线，<110→机会 74%命中）
 
     # 政策
     pboc_tone: str | None = None              # 'tight' / 'loose' / 'neutral'
@@ -124,22 +138,34 @@ class ScorecardResult:
 # 各维度评分函数
 # =====================================================
 def score_valuation(inp: ScorecardInputs) -> List[ScoreItem]:
-    """估值维度: [-4, +4]"""
+    """估值维度: [-4, +4]
+
+    v12-R1 (2026-06 第一性原理): PE 信号须结合 ROE 趋势才有意义。
+      - PE<15 + ROE 上升 → 真底部，保留 -2
+      - PE<15 + ROE 平稳 → 中性便宜，-1
+      - PE<15 + ROE 下降 → 估值陷阱，0 分（不打分）
+    逻辑：股价 = EPS × PE，当 EPS（ROE）持续下滑时，
+          PE"便宜"是假象，企业盈利能力在萎缩。
+    """
     items = []
     pe = inp.cs300_pe_ttm
     pb = inp.cs300_pb
     if pe is not None:
         if pe > 50: items.append(ScoreItem("valuation", "PE>50", "risk", +2))
         elif pe > 40: items.append(ScoreItem("valuation", "PE>40", "risk", +1))
-        # v3.4.12 裁剪：PE>30 触发 1 次（2007，t=0 不显著）；PE<20 触发 2 次方向错（均回报 -16.3% vs 未触发 +22.3%）
-        # elif pe > 30: items.append(ScoreItem("valuation", "PE>30", "risk", +1))
-        if pe < 15: items.append(ScoreItem("valuation", "PE<15", "opportunity", -2))
-        # elif pe < 20: items.append(ScoreItem("valuation", "PE<20", "opportunity", -1))
+        if pe < 15:
+            trend = inp.roe_3y_trend
+            if trend == 'rising':
+                # ROE 上升 + PE 便宜 = 真底部（第一性原理确认）
+                items.append(ScoreItem("valuation", "PE<15+ROE上升(真底部)", "opportunity", -2))
+            elif trend == 'declining':
+                # ROE 下降 = 估值陷阱，PE 再低也不打分
+                pass  # v12-R1: 不触发任何信号
+            else:
+                # ROE 平稳或数据缺失 → 保守打 -1
+                items.append(ScoreItem("valuation", "PE<15+ROE平稳", "opportunity", -1))
     if pb is not None:
-        # v3.4.12 裁剪：PB>3 / PB<2 均方向错（t=+0.14 / t=-0.33），触发后回报与方向相反
-        # if pb > 3: items.append(ScoreItem("valuation", "PB>3", "risk", +1))
-        # if pb < 2: items.append(ScoreItem("valuation", "PB<2", "opportunity", -1))
-        pass
+        pass  # v3.4.12 裁剪
     return items
 
 
@@ -214,6 +240,12 @@ def score_fundamental(inp: ScorecardInputs) -> List[ScoreItem]:
             items.append(ScoreItem("fundamental", "非制造业PMI>55(过热)", "risk", +1))
         if inp.pmi_non_mfg < 50:
             items.append(ScoreItem("fundamental", "非制造业PMI<50(收缩→反弹)", "opportunity", -1))
+    # v13-B1: 企业景气指数（季度，前向填充到月度）
+    # 景气 < 110 → 74% 命中次4季涨，均涨 +15.1%（数据验证，2005Q1起）
+    ebi = inp.enterprise_boom_index
+    if ebi is not None:
+        if ebi < 110:
+            items.append(ScoreItem("fundamental", "企业景气<110(低信心底部)", "opportunity", -1))
     return items
 
 
@@ -277,6 +309,9 @@ def score_external(inp: ScorecardInputs) -> List[ScoreItem]:
     # v11-F: FED rate ≥ 4.5 → 紧缩末段反转预期（71% 涨）
     if inp.fed_rate_level is not None and inp.fed_rate_level >= 4.5:
         items.append(ScoreItem("external", "FED利率≥4.5(紧缩末段)", "opportunity", -1))
+    # v12-M4: 美 10Y 12 月升幅 > 100bp → 美债收紧周期 = A 股资金外流压力
+    if inp.us10y_chg_12m_bp is not None and inp.us10y_chg_12m_bp > 100:
+        items.append(ScoreItem("external", "美10Y升>100bp(紧缩周期)", "risk", +1))
     return items
 
 
@@ -295,11 +330,11 @@ def score_policy(inp: ScorecardInputs) -> List[ScoreItem]:
         items.append(ScoreItem("policy", "中央会议双防", "risk", +1))
     if inp.central_meeting_tone == "expansionary":
         items.append(ScoreItem("policy", "中央会议积极宽松", "opportunity", -1))
-    # v3.4.9 新增：国家队入场（discrete 强信号，强度 -2 与 pboc_tone 同级）
+    # v3.4.9 国家队入场 (v12-M1 反死锚: -2 → -1，避免长期持有时拖累总分)
     if inp.national_team_action == "entry":
-        items.append(ScoreItem("policy", "国家队入场", "opportunity", -2))
+        items.append(ScoreItem("policy", "国家队入场", "opportunity", -1))
     if inp.national_team_action == "exit":
-        items.append(ScoreItem("policy", "国家队减持", "risk", +2))
+        items.append(ScoreItem("policy", "国家队减持", "risk", +1))
     # v3.4.10 新增：房地产政策大转向（discrete，强度 ±1 与 stamp_duty 同级）
     if inp.property_policy == "loosen":
         items.append(ScoreItem("policy", "房地产政策放松", "opportunity", -1))
@@ -345,6 +380,31 @@ def score_to_target_equity(score: int) -> tuple[float, str]:
     if score <= 12:
         return 15.0, "高风险"
     return 0.0, "极端风险"
+
+
+def momentum_filter_equity(target_eq: float, cs300_6m_return: float | None) -> tuple[float, str]:
+    """v12-M2 动量过滤 — 解决"估值便宜但已大涨"的伪机会问题
+
+    评分卡给加仓档（target_eq >= 80）时，加 CS300 6 月动量过滤：
+      - 6M 涨幅 > +25% → 牛市顶部假信号，仓位下降一档（避免追高）
+      - 6M 涨幅 > +15% → 略下降（中性偏多）
+      - 6M 涨幅 < -10% → 真正底部，完全放行
+      - 中间区间不动
+
+    设计意图：评分卡 2014-2015 杠杆牛、2017-2018 慢牛顶、2021 抱团顶
+    都是"估值便宜 + 政策利好 + 已大涨"的伪机会，动量过滤可识别。
+    """
+    if target_eq < 80 or cs300_6m_return is None:
+        return target_eq, ''
+    if cs300_6m_return > 25:
+        # 强趋势顶部 → 降两档
+        new_eq = max(60.0, target_eq - 25)
+        return new_eq, f' (6M+{cs300_6m_return:.0f}% 强势顶 →降至 {new_eq:.0f}%)'
+    if cs300_6m_return > 15:
+        # 中势 → 降一档
+        new_eq = max(65.0, target_eq - 15)
+        return new_eq, f' (6M+{cs300_6m_return:.0f}% 中势顶 →降至 {new_eq:.0f}%)'
+    return target_eq, ''
 
 
 # =====================================================
