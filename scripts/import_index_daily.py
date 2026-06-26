@@ -40,6 +40,8 @@ BROAD_BASE_INDEX_CODES: list[tuple[str, str]] = [
     ("000905.SH", "中证500"),
     ("399005.SZ", "中小板指"),
     ("399006.SZ", "创业板指"),
+    # 补充：红利ETF跟踪指数，回测中频繁出现
+    ("000015.SH", "中证红利"),
 ]
 
 # Tushare index_daily 返回字段（按 doc_id=95）
