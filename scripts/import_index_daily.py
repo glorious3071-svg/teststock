@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 
 from tushare_client import create_client
 
-SCHEMA_FILE = ROOT / "sql" / "index_daily_schema.sql"
+SCHEMA_FILE   = ROOT / "sql" / "index_daily_schema.sql"
 REQUEST_SLEEP = 0.6   # teajoin 限速保护
 START_DATE    = "20060101"
 
@@ -36,19 +36,21 @@ INDEX_CODES: list[tuple[str, str]] = [
     ("000905.SH", "中证500"),
     ("399001.SZ", "深证成指"),
     ("399006.SZ", "创业板指"),
+    ("399005.SZ", "中小板指"),
+    ("000015.SH", "中证红利"),
 ]
 
 # Tushare index_daily 字段 → 入库列名映射（change 是保留字，改为 change_pt）
 FIELD_MAP = {
-    "open":     "open",
-    "high":     "high",
-    "low":      "low",
-    "close":    "close",
+    "open":      "open",
+    "high":      "high",
+    "low":       "low",
+    "close":     "close",
     "pre_close": "pre_close",
-    "change":   "change_pt",
-    "pct_chg":  "pct_chg",
-    "vol":      "vol",
-    "amount":   "amount",
+    "change":    "change_pt",
+    "pct_chg":   "pct_chg",
+    "vol":       "vol",
+    "amount":    "amount",
 }
 DB_COLS = list(FIELD_MAP.values())
 
@@ -148,8 +150,8 @@ def prepare(df: pd.DataFrame) -> pd.DataFrame:
 def upsert(conn: pymysql.Connection, df: pd.DataFrame) -> int:
     if df.empty:
         return 0
-    cols    = [c for c in DB_COLS if c in df.columns]
-    sql     = f"""
+    cols = [c for c in DB_COLS if c in df.columns]
+    sql  = f"""
         INSERT INTO index_daily
             (ts_code, trade_date, {', '.join(cols)})
         VALUES (%s, %s, {', '.join(['%s'] * len(cols))})
@@ -197,9 +199,8 @@ def main() -> None:
             else:
                 last = last_date_in_db(conn, ts_code)
                 if last:
-                    # 从最新日期后一天开始增量
-                    d = date.fromisoformat(last)
                     from datetime import timedelta
+                    d     = date.fromisoformat(last)
                     start = (d + timedelta(days=1)).strftime("%Y%m%d")
                     print(f"{ts_code} {name}: 增量，从 {start} 开始")
                 else:
@@ -211,7 +212,7 @@ def main() -> None:
                 print(f"  已是最新，跳过")
                 continue
 
-            raw  = fetch_all(client, ts_code, start)
+            raw = fetch_all(client, ts_code, start)
             if raw.empty:
                 print(f"  无数据")
                 continue

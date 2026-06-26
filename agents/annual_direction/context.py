@@ -7,6 +7,7 @@ import pymysql
 from agents.annual_direction.db import connect
 from agents.annual_direction.mode import AgentMode, resolve_mode
 from agents.annual_direction.models import AnnualContext, EtfCandidate
+from agents.annual_direction.sector_signals import sector_signals_as_of
 from macro.annual_snapshot import annual_macro_brief, load_snapshot, margin_asof_dict, pboc_asof_dict, valuation_asof_dict
 
 THEME_ORDER = [
@@ -166,6 +167,7 @@ def build_context(apply_year: int, *, mode: str = "auto") -> AnnualContext:
             conn, apply_year, as_of_date=as_of, backtest=agent_mode.is_backtest
         )
         count = load_etf_count(conn, as_of, backtest=agent_mode.is_backtest)
+        sector_sigs = sector_signals_as_of(conn, as_of)
     finally:
         conn.close()
 
@@ -177,4 +179,5 @@ def build_context(apply_year: int, *, mode: str = "auto") -> AnnualContext:
         macro_brief=brief,
         etf_universe_count=count,
         etf_candidates=candidates,
+        sector_signals=[s.to_dict() for s in sector_sigs],
     )
