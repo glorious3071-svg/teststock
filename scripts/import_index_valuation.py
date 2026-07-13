@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+import argparse
 from datetime import date
 from pathlib import Path
 
@@ -59,6 +60,17 @@ DB_COLS = [
     "pe_ttm",
     "pb",
 ]
+
+
+def latest_possible_trade_date() -> str:
+    from datetime import timedelta
+
+    today = date.today()
+    if today.weekday() == 5:
+        today -= timedelta(days=1)
+    elif today.weekday() == 6:
+        today -= timedelta(days=2)
+    return today.strftime("%Y%m%d")
 
 
 def mysql_config() -> dict:
@@ -133,7 +145,7 @@ def fetch_index_range(client, ts_code: str, start_date: str, end_date: str) -> p
 
 
 def fetch_index_all(client, ts_code: str, start_date: str = START_DATE) -> pd.DataFrame:
-    end_date = date.today().strftime("%Y%m%d")
+    end_date = latest_possible_trade_date()
     frames: list[pd.DataFrame] = []
     chunk_start = start_date
 
@@ -187,7 +199,32 @@ def upsert_rows(conn, df: pd.DataFrame) -> int:
     return len(rows)
 
 
+def last_date_in_db(conn, ts_code: str) -> str | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT MAX(trade_date) FROM index_dailybasic WHERE ts_code = %s",
+            (ts_code,),
+        )
+        row = cur.fetchone()
+    if row and row[0]:
+        return row[0].isoformat()
+    return None
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Import major index PE/PB from Tushare")
+    parser.add_argument(
+        "--since",
+        default=None,
+        help="起始日期 YYYYMMDD；默认全量。与 --incremental 同时传入时优先使用 --since",
+    )
+    parser.add_argument(
+        "--incremental",
+        action="store_true",
+        help="按每个指数 index_dailybasic 已有最大 trade_date + 1 续传",
+    )
+    args = parser.parse_args()
+
     client = create_client()
     DATA_DIR.mkdir(exist_ok=True)
 
@@ -198,8 +235,29 @@ def main() -> None:
 
         total = 0
         for ts_code, name in INDEX_CODES:
-            print(f"Fetching {ts_code} {name}...")
-            raw = fetch_index_all(client, ts_code)
+            if args.since:
+                start = args.since
+            elif args.incremental:
+                last = last_date_in_db(conn, ts_code)
+                if last:
+                    from datetime import timedelta
+
+                    d = date.fromisoformat(last)
+                    start = (d + timedelta(days=1)).strftime("%Y%m%d")
+                    print(f"{ts_code} {name}: 增量，从 {start} 开始")
+                else:
+                    start = START_DATE
+                    print(f"{ts_code} {name}: 无历史数据，从 {start} 开始")
+            else:
+                start = START_DATE
+
+            today = latest_possible_trade_date()
+            if start > today:
+                print(f"{ts_code} {name}: 已是最新，跳过")
+                continue
+
+            print(f"Fetching {ts_code} {name} from {start}...")
+            raw = fetch_index_all(client, ts_code, start)
             prepared = prepare_df(raw)
             print(
                 f"  rows: {len(prepared)}"

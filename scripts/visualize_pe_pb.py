@@ -14,6 +14,7 @@ import matplotlib.ticker as ticker
 from matplotlib.patches import Patch
 import numpy as np
 import os
+from pathlib import Path
 
 # ── 数据库连接 ────────────────────────────────────────────────
 conn = pymysql.connect(
@@ -291,7 +292,7 @@ fig.text(0.5, 0.065, summary, ha="center", va="top",
 fig.text(0.5, 0.005, "数据来源：teststock MySQL · index_dailybasic · 000300.SH",
          ha="center", fontsize=7, color="#adb5bd")
 
-out = "/Users/jingxuan/workspace/teststock/docs/assets/cs300_pe_pb_analysis.png"
+out = str(Path(__file__).resolve().parents[1] / "docs/assets/cs300_pe_pb_analysis.png")
 plt.savefig(out, dpi=150, bbox_inches="tight", facecolor=fig.get_facecolor())
 print(f"已保存：{out}")
 plt.show()

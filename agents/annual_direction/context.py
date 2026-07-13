@@ -168,6 +168,23 @@ def build_context(apply_year: int, *, mode: str = "auto") -> AnnualContext:
         )
         count = load_etf_count(conn, as_of, backtest=agent_mode.is_backtest)
         sector_sigs = sector_signals_as_of(conn, as_of)
+        csi_top: list[dict] = []
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT rank_position, ts_code, index_name, final_score, best_theme, news_score
+                FROM csi_annual_recommendation
+                WHERE apply_year = %s AND ts_code LIKE '%%.CSI'
+                ORDER BY rank_position LIMIT 10
+                """,
+                (apply_year,),
+            )
+            for rank, ts, name, score, theme, news in cur.fetchall():
+                csi_top.append({
+                    "rank": rank, "ts_code": ts, "index_name": name,
+                    "final_score": float(score), "best_theme": theme,
+                    "news_score": float(news) if news is not None else None,
+                })
     finally:
         conn.close()
 
@@ -180,4 +197,5 @@ def build_context(apply_year: int, *, mode: str = "auto") -> AnnualContext:
         etf_universe_count=count,
         etf_candidates=candidates,
         sector_signals=[s.to_dict() for s in sector_sigs],
+        csi_recommendations=csi_top,
     )

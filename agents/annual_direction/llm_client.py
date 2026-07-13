@@ -62,6 +62,7 @@ def create_client():
     kwargs: dict[str, Any] = {
         "api_key": cfg["api_key"],
         "base_url": cfg["base_url"],
+        "timeout": float(os.getenv("LLM_TIMEOUT", "120")),
     }
     if cfg["default_headers"]:
         kwargs["default_headers"] = cfg["default_headers"]

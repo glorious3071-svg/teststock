@@ -38,3 +38,54 @@ python -m mcp_servers.annual_direction
 ```bash
 python scripts/run_annual_backtest.py 2011 --cash 1000000
 ```
+
+## 财经资讯采集流水线
+
+每日采集财经/产业/国际资讯，纯文本写入 `news_article`；LLM 抽取结果写入 `news_extraction`（供 CSI 行业指数预测）。
+
+```bash
+# 建表（首次）
+mysql -u teststock -pteststock teststock < sql/news_pipeline_schema.sql
+
+# 快讯（建议每 30 分钟）
+python scripts/run_daily_news.py --tier flash
+
+# 日报（央视/研报/发改委/国际，建议每天 20:30）
+python scripts/run_daily_news.py --tier daily
+
+# 全量
+python scripts/run_daily_news.py --tier all
+
+# LLM 抽取（需配置 .env 中 LLM_*）
+python scripts/run_news_extraction.py --limit 20
+
+# 安装 macOS 定时任务（含 21:00 加工）
+bash scripts/install_news_launchd.sh
+
+# 全链路：预筛 → 聚类 → 抽取 → daily/weekly → CSI
+python scripts/run_full_news_intelligence.py
+python scripts/verify_news_processing.py
+```
+
+设计文档：`docs/design/news_intelligence_master_plan.md`  
+采集准入：`docs/design/news_pipeline_todos.md`。
+
+## 年度 CSI 指数推荐
+
+结合政策信号、新闻语义、动量/估值，每年输出 CSI 指数排行。
+
+```bash
+# 一键：新闻抽取 + 题材聚合 + CSI 排行 + 验证
+python scripts/run_annual_csi_recommendation.py --year 2026
+
+# 分步
+python scripts/aggregate_theme_news_signals.py --year 2026 --live
+python scripts/rank_annual_csi.py --year 2026 --top 30 --save
+python scripts/validate_csi_rank.py --year 2026
+
+# 历史回测验证（2015-2024）
+python scripts/validate_csi_rank.py --from 2015 --to 2024 --regenerate
+```
+
+设计文档：`docs/design/annual_csi_recommendation.md`
+

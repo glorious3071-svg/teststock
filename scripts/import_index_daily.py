@@ -55,6 +55,17 @@ FIELD_MAP = {
 DB_COLS = list(FIELD_MAP.values())
 
 
+def latest_possible_trade_date() -> str:
+    from datetime import timedelta
+
+    today = date.today()
+    if today.weekday() == 5:
+        today -= timedelta(days=1)
+    elif today.weekday() == 6:
+        today -= timedelta(days=2)
+    return today.strftime("%Y%m%d")
+
+
 def mysql_config() -> dict:
     load_dotenv(ROOT / ".env")
     return {
@@ -116,7 +127,7 @@ def fetch_range(client, ts_code: str, start: str, end: str) -> pd.DataFrame:
 
 
 def fetch_all(client, ts_code: str, start_date: str) -> pd.DataFrame:
-    today = date.today().strftime("%Y%m%d")
+    today = latest_possible_trade_date()
     frames: list[pd.DataFrame] = []
     chunk = start_date
 
@@ -175,7 +186,7 @@ def last_date_in_db(conn: pymysql.Connection, ts_code: str) -> str | None:
         )
         r = cur.fetchone()
     if r and r[0]:
-        return r[0].strftime("%Y%m%d")
+        return r[0].isoformat()
     return None
 
 
@@ -207,7 +218,7 @@ def main() -> None:
                     start = START_DATE
                     print(f"{ts_code} {name}: 全量，从 {start} 开始")
 
-            today = date.today().strftime("%Y%m%d")
+            today = latest_possible_trade_date()
             if start > today:
                 print(f"  已是最新，跳过")
                 continue

@@ -42,6 +42,7 @@ class AnnualContext:
     supplemented: dict[str, Any] = field(default_factory=dict)
     still_missing: list[str] = field(default_factory=list)
     sector_signals: list[dict[str, Any]] = field(default_factory=list)
+    csi_recommendations: list[dict[str, Any]] = field(default_factory=list)
 
     def to_prompt_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -61,6 +62,7 @@ class AnnualContext:
                 for e in self.etf_candidates
             ],
             "sw_sector_signals": self.sector_signals,
+            "csi_recommendations_top10": self.csi_recommendations,
             "supplemented_from_web": self.supplemented,
             "still_missing": self.still_missing,
             "data_gaps": [

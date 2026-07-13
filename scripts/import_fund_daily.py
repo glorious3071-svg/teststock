@@ -30,7 +30,7 @@ from __future__ import annotations
 import os
 import sys
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -108,6 +108,15 @@ def parse_trade_date(value) -> str | None:
     return pd.to_datetime(text).strftime("%Y-%m-%d")
 
 
+def latest_possible_trade_date() -> str:
+    today = date.today()
+    if today.weekday() == 5:
+        today -= timedelta(days=1)
+    elif today.weekday() == 6:
+        today -= timedelta(days=2)
+    return today.strftime("%Y%m%d")
+
+
 def apply_schema(conn) -> None:
     sql = SCHEMA_FILE.read_text(encoding="utf-8")
     with conn.cursor() as cur:
@@ -167,11 +176,23 @@ def resolve_start_date(
 
 
 def fetch_fund_daily_range(client, ts_code: str, start_date: str, end_date: str) -> pd.DataFrame:
-    data = client.query_http(
-        "fund_daily",
-        {"ts_code": ts_code, "start_date": start_date, "end_date": end_date},
-        timeout=120,
-    )
+    data = None
+    last_exc: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            data = client.query_http(
+                "fund_daily",
+                {"ts_code": ts_code, "start_date": start_date, "end_date": end_date},
+                timeout=120,
+            )
+            break
+        except Exception as exc:
+            last_exc = exc
+            print(f"  fetch retry {attempt}/3 failed: {exc}")
+            if attempt < 3:
+                time.sleep(3 * attempt)
+    if data is None:
+        raise last_exc or RuntimeError("fund_daily request failed")
     items = data.get("data", {}).get("items") or []
     fields = data.get("data", {}).get("fields") or []
     if not items:
@@ -180,7 +201,7 @@ def fetch_fund_daily_range(client, ts_code: str, start_date: str, end_date: str)
 
 
 def fetch_fund_daily_all(client, ts_code: str, start_date: str) -> pd.DataFrame:
-    end_date = date.today().strftime("%Y%m%d")
+    end_date = latest_possible_trade_date()
     if start_date > end_date:
         return pd.DataFrame(columns=TUSHARE_FIELDS)
 
@@ -240,7 +261,7 @@ def upsert_rows(conn, df: pd.DataFrame) -> int:
     return len(rows)
 
 
-def main() -> None:
+def main() -> int:
     client = create_client()
     DATA_DIR.mkdir(exist_ok=True)
 
@@ -260,17 +281,23 @@ def main() -> None:
         total_upserted = 0
         skipped_no_new = 0
         empty_fetch = 0
+        failed_fetch = 0
 
         for idx, (ts_code, extname, index_name, list_date) in enumerate(etf_list, 1):
             start_date = resolve_start_date(ts_code, list_date, existing_last)
-            end_date = date.today().strftime("%Y%m%d")
+            end_date = latest_possible_trade_date()
             if start_date > end_date:
                 skipped_no_new += 1
                 continue
 
             print(f"[{idx}/{len(etf_list)}] {ts_code} {extname} ({index_name}) "
                   f"start={start_date}")
-            raw = fetch_fund_daily_all(client, ts_code, start_date)
+            try:
+                raw = fetch_fund_daily_all(client, ts_code, start_date)
+            except Exception as exc:
+                failed_fetch += 1
+                print(f"  FAIL: {exc}")
+                continue
             if raw.empty:
                 print("  rows: 0 (skip)")
                 empty_fetch += 1
@@ -299,10 +326,12 @@ def main() -> None:
                   f"{first_d} ~ {last_d}")
 
         print(f"\nTotal upserted: {total_upserted}, "
-              f"已是最新跳过: {skipped_no_new}, 空回包: {empty_fetch}")
+              f"已是最新跳过: {skipped_no_new}, 空回包: {empty_fetch}, "
+              f"失败: {failed_fetch}")
     finally:
         conn.close()
+    return 1 if failed_fetch else 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

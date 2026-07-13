@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.jingxuan.teststock-news-processing</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/env</string>
+    <string>python3</string>
+    <string>/Users/jingxuan/Projects/teststock/scripts/run_news_daily_processing.py</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/jingxuan/Projects/teststock</string>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>21</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/jingxuan/Projects/teststock/data/logs/news-processing.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/jingxuan/Projects/teststock/data/logs/news-processing.err.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin:/Users/jingxuan/Library/Python/3.9/bin</string>
+    <key>ALL_PROXY</key>
+    <string></string>
+    <key>HTTP_PROXY</key>
+    <string></string>
+    <key>HTTPS_PROXY</key>
+    <string></string>
+  </dict>
+</dict>
+</plist>
