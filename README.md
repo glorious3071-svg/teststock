@@ -89,3 +89,23 @@ python scripts/validate_csi_rank.py --from 2015 --to 2024 --regenerate
 
 设计文档：`docs/design/annual_csi_recommendation.md`
 
+## CSI 研报增强框架自动化
+
+新框架使用日行情/估值、指数成分、宏观环境、上一年 H2 行业研报元数据，定期重建特征并跑年度验证。
+
+```bash
+# 只检查 MySQL 覆盖情况
+python scripts/run_csi_research_pipeline.py --summary-only
+
+# 全流程：市场数据同步 -> H2 行业研报同步 -> 新框架回测与质量门禁
+python scripts/run_csi_research_pipeline.py
+
+# 只刷新研报和回测，不跑市场同步
+python scripts/run_csi_research_pipeline.py --skip-market-sync
+
+# Codex 自动化调度
+# 已通过 ~/.codex/automations/teststock-csi-research-pipeline/automation.toml
+# 配置为周度运行；市场数据由已有 teststock-daily-market-data-sync 自动化负责。
+```
+
+核心产物写入 `data/ml/regime_research_csi_strategy_*.csv/json`，`data/` 不入库，可由脚本复跑生成。

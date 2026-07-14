@@ -38,7 +38,7 @@ def parse_dt(raw: Any):
     return None
 
 
-def fetch_page(start: str, end: str, page_no: int, page_size: int) -> tuple[list[dict[str, Any]], int, int]:
+def fetch_page(start: str, end: str, page_no: int, page_size: int, retries: int = 3) -> tuple[list[dict[str, Any]], int, int]:
     params = {
         "industryCode": "*",
         "pageSize": page_size,
@@ -47,8 +47,19 @@ def fetch_page(start: str, end: str, page_no: int, page_size: int) -> tuple[list
         "pageNo": page_no,
         "qType": 1,
     }
-    resp = requests.get(API_URL, params=params, headers=HEADERS, timeout=20)
-    resp.raise_for_status()
+    last_error: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            resp = requests.get(API_URL, params=params, headers=HEADERS, timeout=20)
+            resp.raise_for_status()
+            break
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt >= retries:
+                raise
+            time.sleep(1.5 * attempt)
+    else:
+        raise RuntimeError(f"failed to fetch page {page_no}") from last_error
     payload = resp.json()
     data = payload.get("data") or []
     if isinstance(data, dict):
@@ -61,8 +72,46 @@ def fetch_page(start: str, end: str, page_no: int, page_size: int) -> tuple[list
 
 
 def import_range(start: str, end: str, *, page_size: int, max_pages: int, sleep: float) -> dict[str, int]:
-    conn = get_connection()
     stats = {"fetched": 0, "inserted": 0, "deleted_old": 0}
+    values = []
+    total_pages = max_pages
+    for page_no in range(1, max_pages + 1):
+        rows, api_pages, hits = fetch_page(start, end, page_no, page_size)
+        if page_no == 1:
+            total_pages = min(api_pages or 1, max_pages)
+            print(f"range={start}..{end} hits={hits} api_pages={api_pages} importing_pages={total_pages}")
+        if not rows:
+            break
+        stats["fetched"] += len(rows)
+        for row in rows:
+            report_date = parse_dt(row.get("publishDate") or row.get("date"))
+            title = str(row.get("title") or "").strip()
+            if not report_date or not title:
+                continue
+            author = row.get("author") or row.get("researcher") or ""
+            if isinstance(author, list):
+                author = ",".join(str(x) for x in author if x)
+            values.append(
+                (
+                    report_date,
+                    title[:500],
+                    str(author or "")[:500],
+                    str(row.get("orgName") or row.get("orgSName") or "")[:200],
+                    str(row.get("industryName") or row.get("industry") or "")[:100],
+                    str(row.get("stockName") or "")[:100],
+                    str(row.get("stockCode") or "")[:20],
+                    str(row.get("emRatingName") or row.get("emRating") or "")[:50],
+                    str(row.get("summary") or "") or None,
+                    None,
+                    "industry",
+                    "eastmoney_api",
+                )
+            )
+        if page_no >= total_pages:
+            break
+        time.sleep(sleep)
+
+    conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -75,58 +124,21 @@ def import_range(start: str, end: str, *, page_size: int, max_pages: int, sleep:
                 (start, end),
             )
             stats["deleted_old"] = cur.rowcount
-        conn.commit()
-
-        total_pages = max_pages
-        for page_no in range(1, max_pages + 1):
-            rows, api_pages, hits = fetch_page(start, end, page_no, page_size)
-            if page_no == 1:
-                total_pages = min(api_pages or 1, max_pages)
-                print(f"range={start}..{end} hits={hits} api_pages={api_pages} importing_pages={total_pages}")
-            if not rows:
-                break
-            values = []
-            for row in rows:
-                report_date = parse_dt(row.get("publishDate") or row.get("date"))
-                title = str(row.get("title") or "").strip()
-                if not report_date or not title:
-                    continue
-                author = row.get("author") or row.get("researcher") or ""
-                if isinstance(author, list):
-                    author = ",".join(str(x) for x in author if x)
-                values.append(
-                    (
-                        report_date,
-                        title[:500],
-                        str(author or "")[:500],
-                        str(row.get("orgName") or row.get("orgSName") or "")[:200],
-                        str(row.get("industryName") or row.get("industry") or "")[:100],
-                        str(row.get("stockName") or "")[:100],
-                        str(row.get("stockCode") or "")[:20],
-                        str(row.get("emRatingName") or row.get("emRating") or "")[:50],
-                        str(row.get("summary") or "") or None,
-                        None,
-                        "industry",
-                        "eastmoney_api",
-                    )
-                )
-            stats["fetched"] += len(rows)
             if values:
-                with conn.cursor() as cur:
-                    cur.executemany(
-                        """
-                        INSERT INTO broker_research_report
-                            (report_date, title, author, org_name, industry, stock_name,
-                             stock_code, rating, summary, content, report_type, source)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                        """,
-                        values,
-                    )
-                    stats["inserted"] += cur.rowcount
-                conn.commit()
-            if page_no >= total_pages:
-                break
-            time.sleep(sleep)
+                cur.executemany(
+                    """
+                    INSERT INTO broker_research_report
+                        (report_date, title, author, org_name, industry, stock_name,
+                         stock_code, rating, summary, content, report_type, source)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    """,
+                    values,
+                )
+                stats["inserted"] = cur.rowcount
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
     return stats
