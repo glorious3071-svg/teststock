@@ -21,6 +21,8 @@ from db.connection import get_connection
 
 STEPS = [
     ("core_index_daily", [sys.executable, "scripts/import_index_daily.py"]),
+    ("cffex_index_futures", [sys.executable, "scripts/import_cffex_index_futures.py"]),
+    ("cn_etf_option_snapshot", [sys.executable, "scripts/import_cn_etf_option_snapshot.py"]),
     (
         "core_index_valuation",
         [sys.executable, "scripts/import_index_valuation.py", "--incremental"],
@@ -57,6 +59,39 @@ def print_db_summary(label: str) -> None:
                     f"{table}: codes={n_codes}, rows={n_rows}, "
                     f"range={min_date} ~ {max_date}"
                 )
+            cur.execute(
+                """
+                SELECT COUNT(DISTINCT ts_code), COUNT(*), MIN(trade_date), MAX(trade_date)
+                FROM fut_daily
+                WHERE ts_code IN ('IF.CFX', 'IH.CFX', 'IC.CFX', 'IM.CFX')
+                """
+            )
+            n_codes, n_rows, min_date, max_date = cur.fetchone()
+            print(
+                f"cffex_index_futures: codes={n_codes}, rows={n_rows}, "
+                f"range={min_date} ~ {max_date}"
+            )
+            cur.execute(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.tables
+                WHERE table_schema = DATABASE() AND table_name = 'cn_option_daily'
+                """
+            )
+            if cur.fetchone()[0]:
+                cur.execute(
+                    """
+                    SELECT COUNT(DISTINCT ts_code), COUNT(*), MIN(trade_date), MAX(trade_date)
+                    FROM cn_option_daily
+                    """
+                )
+                n_codes, n_rows, min_date, max_date = cur.fetchone()
+                print(
+                    f"cn_option_daily: codes={n_codes}, rows={n_rows}, "
+                    f"range={min_date} ~ {max_date}"
+                )
+            else:
+                print("cn_option_daily: table missing")
     finally:
         conn.close()
 

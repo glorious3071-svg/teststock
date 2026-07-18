@@ -232,26 +232,39 @@ def main() -> int:
     parser.add_argument("--points", default="0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0")
     parser.add_argument("--min-vector", type=float, default=0.2)
     parser.add_argument("--worst-weight", type=float, default=0.7)
+    parser.add_argument(
+        "--train-to",
+        type=int,
+        default=None,
+        help="Select weights using only years <= train-to, then report all available years.",
+    )
     args = parser.parse_args()
 
     points = [float(x) for x in args.points.split(",") if x.strip()]
     data = load_data()
+    train_data = data[data["apply_year"] <= args.train_to].copy() if args.train_to is not None else data
+    if train_data.empty:
+        raise SystemExit(f"No training rows for train-to={args.train_to}")
     best: tuple[float, dict[str, float], list[dict[str, Any]], dict[str, Any]] | None = None
     combos = weight_grid(points, args.min_vector)
     for weights in combos:
-        data["guarded_score"] = score_with_weights(data, weights)
-        yearly, summary = evaluate(data, "guarded_score", args.top_k)
+        train_data["guarded_score"] = score_with_weights(train_data, weights)
+        yearly, summary = evaluate(train_data, "guarded_score", args.top_k)
         score = objective(summary, args.worst_weight)
         if best is None or score > best[0]:
             best = (score, weights, yearly, summary)
     if best is None:
         raise SystemExit("No valid weight combinations")
 
-    score, weights, yearly, summary = best
+    score, weights, train_yearly, train_summary = best
     data["guarded_score"] = score_with_weights(data, weights)
+    yearly, summary = evaluate(data, "guarded_score", args.top_k)
     report = {
         "objective": score,
         "objective_formula": "mean_excess + 0.5*mean_top_bottom_spread + worst_weight*worst_excess",
+        "train_to": args.train_to,
+        "train_yearly": train_yearly,
+        "train_summary": train_summary,
         "worst_weight": args.worst_weight,
         "min_vector": args.min_vector,
         "grid_points": points,
@@ -264,6 +277,8 @@ def main() -> int:
 
     print("Guarded News Vector Strategy")
     print(f"  combinations={len(combos)} objective={score:.4f}")
+    if args.train_to is not None:
+        print(f"  selected weights using years <= {args.train_to}; reporting all available years")
     print("  weights:")
     for k, v in weights.items():
         if v:

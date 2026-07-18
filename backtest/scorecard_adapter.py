@@ -347,6 +347,21 @@ def _normalize_pboc_tone(raw: str | None) -> str | None:
     return None
 
 
+def _latest_cewc_apply_year(cur, snapshot_date: date) -> int | None:
+    """Return the latest meeting record observable at the snapshot."""
+    cur.execute(
+        """
+        SELECT apply_year FROM cewc_annual
+        WHERE meeting_end IS NOT NULL AND meeting_end <= %s
+        ORDER BY meeting_end DESC, apply_year DESC
+        LIMIT 1
+        """,
+        (snapshot_date,),
+    )
+    row = cur.fetchone()
+    return int(row[0]) if row and row[0] is not None else None
+
+
 def _pboc_tone(cur, snapshot_date: date, source: str = "tags_first") -> str | None:
     """评分卡 spec §六 行 181：央行口径三态。
 
@@ -356,7 +371,9 @@ def _pboc_tone(cur, snapshot_date: date, source: str = "tags_first") -> str | No
 
     三态归一化：tight / loose / neutral / None
     """
-    apply_year = snapshot_date.year + 1
+    apply_year = _latest_cewc_apply_year(cur, snapshot_date)
+    if apply_year is None:
+        return None
 
     if source == "tags_first":
         # 优先 cewc_tags（取最新 extracted_at 批次的最高 confidence 记录）
@@ -553,7 +570,9 @@ def _central_meeting_tone(cur, snapshot_date: date,
       + cewc_annual.tone + theme；缺失时退回纯 annual 判别。
     - source='annual_only'：仅 cewc_annual.tone + theme 关键字判别。
     """
-    apply_year = snapshot_date.year + 1
+    apply_year = _latest_cewc_apply_year(cur, snapshot_date)
+    if apply_year is None:
+        return None
 
     # 先取 cewc_annual.tone + theme
     cur.execute(
@@ -615,6 +634,19 @@ def _ppi_yoy_and_change(cur, snapshot_month: str) -> tuple[float | None, str | N
     return cur_val, "flat"
 
 
+def _previous_month_key(snapshot_date: date) -> str:
+    if snapshot_date.month == 1:
+        return f"{snapshot_date.year - 1}12"
+    return f"{snapshot_date.year}{snapshot_date.month - 1:02d}"
+
+
+def observable_macro_months(snapshot_date: date) -> dict[str, str]:
+    """Reference months safe to use when source rows lack release dates."""
+
+    previous = _previous_month_key(snapshot_date)
+    return {"pmi": previous, "ppi": previous}
+
+
 def _roe_implied_and_trend(
     cur, ts_code: str, snapshot_date: date,
 ) -> tuple[float | None, str | None]:
@@ -643,14 +675,15 @@ def _roe_implied_and_trend(
 
 
 def _enterprise_boom_index(cur, snapshot_date: date) -> float | None:
-    """v13-B1: 企业景气指数（季度，取 snapshot 前最近一季）"""
+    """v13-B1: use the latest quarter after a conservative 45-day release lag."""
+    observable_quarter_end = snapshot_date - timedelta(days=45)
     cur.execute(
         """
         SELECT boom_index FROM cn_enterprise_boom_quarterly
         WHERE quarter_date <= %s AND boom_index IS NOT NULL
         ORDER BY quarter_date DESC LIMIT 1
         """,
-        (snapshot_date,),
+        (observable_quarter_end,),
     )
     row = cur.fetchone()
     return float(row[0]) if row and row[0] is not None else None
@@ -777,7 +810,13 @@ def load_scorecard_inputs(
     if own_conn:
         conn = pymysql.connect(**mysql_config())
 
-    snapshot_month = f"{snapshot_date.year}{snapshot_date.month:02d}"
+    # The local PMI table stores a reference month but no publication date.
+    # Treat the current month as unavailable at a month-end decision; otherwise
+    # historical snapshots can see PMI releases that were published only after
+    # the rebalance boundary.  This matches the already-conservative PPI rule.
+    observable_months = observable_macro_months(snapshot_date)
+    pmi_observable_month = observable_months["pmi"]
+    ppi_observable_month = observable_months["ppi"]
 
     try:
         with conn.cursor() as cur:
@@ -786,7 +825,7 @@ def load_scorecard_inputs(
             rrr_pp = _rrr_cum_pp_12m(cur, snapshot_date)
             deposit = _deposit_1y_rate(cur, snapshot_date)
 
-            pmi_series = _pmi_series_until(cur, snapshot_month, n=12)
+            pmi_series = _pmi_series_until(cur, pmi_observable_month, n=12)
             below_52 = _pmi_below_52_consecutive(pmi_series)
             resume = _pmi_resume_expansion(pmi_series)
             mfg_3m = _pmi_mfg_3m_avg(pmi_series) if opts.include_pmi_3m_avg else None
@@ -795,7 +834,7 @@ def load_scorecard_inputs(
                 if opts.include_pmi_prod_order else None
             )
 
-            ppi_yoy, ppi_change = _ppi_yoy_and_change(cur, snapshot_month)
+            ppi_yoy, ppi_change = _ppi_yoy_and_change(cur, ppi_observable_month)
 
             us_pct = _us_monthly_pct(cur, snapshot_date) if opts.include_us_monthly_pct else None
             recession = (

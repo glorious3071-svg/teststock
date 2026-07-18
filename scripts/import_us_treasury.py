@@ -15,6 +15,7 @@ import os
 import re
 import sys
 import time
+import argparse
 from datetime import date
 from pathlib import Path
 
@@ -108,14 +109,14 @@ def to_float(value) -> float | None:
     return None if v is None else float(v)
 
 
-def fetch_yearly(client, api: str, start_year: int, end_year: int) -> pd.DataFrame:
+def fetch_yearly(client, api: str, start_year: int, end_year: int, sleep: float, timeout: int) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     for year in range(start_year, end_year + 1):
-        time.sleep(REQUEST_SLEEP)
+        time.sleep(sleep)
         data = client.query_http(
             api,
             {"start_date": f"{year}0101", "end_date": f"{year}1231"},
-            timeout=120,
+            timeout=timeout,
         )
         fields = data["data"]["fields"]
         items = data["data"]["items"]
@@ -178,18 +179,27 @@ def upsert_table(conn, table: str, df: pd.DataFrame, cols: list[str]) -> int:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apis", nargs="+", choices=sorted(API_SPECS), default=sorted(API_SPECS))
+    parser.add_argument("--start-year", type=int, default=START_YEAR)
+    parser.add_argument("--end-year", type=int, default=date.today().year)
+    parser.add_argument("--sleep", type=float, default=REQUEST_SLEEP)
+    parser.add_argument("--timeout", type=int, default=120)
+    parser.add_argument("--skip-rebuild-snapshots", action="store_true")
+    args = parser.parse_args()
+
     client = create_client()
     DATA_DIR.mkdir(exist_ok=True)
-    end_year = date.today().year
 
     conn = pymysql.connect(**mysql_config())
     try:
         print("Applying schema...")
         apply_schema(conn)
 
-        for api, spec in API_SPECS.items():
+        for api in args.apis:
+            spec = API_SPECS[api]
             print(f"Fetching {api}...")
-            df = fetch_yearly(client, api, START_YEAR, end_year)
+            df = fetch_yearly(client, api, args.start_year, args.end_year, args.sleep, args.timeout)
             if df.empty:
                 print(f"  no data returned for {api}")
                 continue
@@ -200,10 +210,11 @@ def main() -> None:
             n = upsert_table(conn, spec["table"], df, spec["cols"])
             print(f"  Upserted {spec['table']}: {n}")
 
-        from macro.annual_snapshot import rebuild_annual_snapshots
+        if not args.skip_rebuild_snapshots:
+            from macro.annual_snapshot import rebuild_annual_snapshots
 
-        n = rebuild_annual_snapshots(conn)
-        print(f"Rebuilt macro_annual_snapshot: {n} years")
+            n = rebuild_annual_snapshots(conn)
+            print(f"Rebuilt macro_annual_snapshot: {n} years")
     finally:
         conn.close()
 

@@ -1,0 +1,27 @@
+CREATE TABLE IF NOT EXISTS us_option_chain_snapshot (
+  underlying_symbol   VARCHAR(32)    NOT NULL COMMENT 'Underlying ETF/equity symbol, e.g. QQQ',
+  quote_date          DATE           NOT NULL COMMENT 'Snapshot date used by the pipeline',
+  expiration_date     DATE           NOT NULL COMMENT 'Option expiration date',
+  option_type         ENUM('call', 'put') NOT NULL COMMENT 'Option right',
+  strike              DECIMAL(18,6)  NOT NULL,
+  contract_symbol     VARCHAR(96)    NOT NULL,
+  currency            VARCHAR(8)     NULL,
+  contract_size       VARCHAR(16)    NULL,
+  last_trade_time     DATETIME       NULL,
+  bid                 DECIMAL(18,6)  NULL,
+  ask                 DECIMAL(18,6)  NULL,
+  mark                DECIMAL(18,6)  NULL COMMENT 'Mid price when bid/ask are available, otherwise last price',
+  last_price          DECIMAL(18,6)  NULL,
+  implied_volatility  DECIMAL(18,8)  NULL,
+  delta_value         DECIMAL(18,8)  NULL,
+  volume              BIGINT         NULL,
+  open_interest       BIGINT         NULL,
+  in_the_money        TINYINT(1)     NULL,
+  source              VARCHAR(32)    NOT NULL DEFAULT 'yahoo_options',
+  fetched_at          TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at          TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (source, underlying_symbol, quote_date, expiration_date, option_type, strike, contract_symbol),
+  KEY idx_us_option_chain_snapshot_underlying_date (underlying_symbol, quote_date),
+  KEY idx_us_option_chain_snapshot_expiry (underlying_symbol, expiration_date, option_type, strike)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  COMMENT='Point-in-time US option-chain snapshots for execution feasibility checks';

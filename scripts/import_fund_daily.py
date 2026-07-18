@@ -27,6 +27,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 import time
@@ -57,6 +58,7 @@ SECTOR_KEYWORDS_REGEX = (
     "计算机|软件|人工智能|AI|机器人|有色|金属|煤炭|能源|钢铁|"
     "化工|电力|公用|通信|5G|地产|房地产"
 )
+OVERSEAS_KEYWORDS_REGEX = "港股|恒生|纳指|标普|日经|德国|法国|美国|中概|海外|全球|东南亚|沙特"
 
 # Tushare fund_daily 返回字段
 TUSHARE_FIELDS = [
@@ -140,13 +142,59 @@ def fetch_sector_etf_list(conn) -> list[tuple[str, str, str, date | None]]:
           AND (etf_type IS NULL OR etf_type != %s)
           AND (list_date IS NULL OR list_date <= DATE_SUB(CURDATE(), INTERVAL %s DAY))
           AND ts_code NOT LIKE %s
+          AND ts_code NOT LIKE '513%%'
+          AND ts_code NOT LIKE '520%%'
+          AND COALESCE(extname, '') NOT REGEXP %s
+          AND COALESCE(index_name, '') NOT REGEXP %s
+          AND COALESCE(index_ts_code, '') NOT LIKE '%%.HI'
+          AND COALESCE(index_ts_code, '') NOT LIKE '%%.OTH'
           AND index_name REGEXP %s
         ORDER BY list_date, ts_code
     """
     with conn.cursor() as cur:
         cur.execute(
             sql,
-            ("L", "QDII", ETF_MIN_LISTING_DAYS, "%.OF", SECTOR_KEYWORDS_REGEX),
+            (
+                "L",
+                "QDII",
+                ETF_MIN_LISTING_DAYS,
+                "%.OF",
+                OVERSEAS_KEYWORDS_REGEX,
+                OVERSEAS_KEYWORDS_REGEX,
+                SECTOR_KEYWORDS_REGEX,
+            ),
+        )
+        return list(cur.fetchall())
+
+
+def fetch_domestic_passive_etf_list(conn) -> list[tuple[str, str, str, date | None]]:
+    """Fetch all live domestic exchange ETF codes that Tushare fund_daily can query."""
+    sql = """
+        SELECT ts_code, extname, index_name, list_date
+        FROM passive_etf
+        WHERE list_status = %s
+          AND (etf_type IS NULL OR etf_type != %s)
+          AND (list_date IS NULL OR list_date <= DATE_SUB(CURDATE(), INTERVAL %s DAY))
+          AND ts_code NOT LIKE %s
+          AND ts_code NOT LIKE '513%%'
+          AND ts_code NOT LIKE '520%%'
+          AND COALESCE(extname, '') NOT REGEXP %s
+          AND COALESCE(index_name, '') NOT REGEXP %s
+          AND COALESCE(index_ts_code, '') NOT LIKE '%%.HI'
+          AND COALESCE(index_ts_code, '') NOT LIKE '%%.OTH'
+        ORDER BY list_date, ts_code
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            sql,
+            (
+                "L",
+                "QDII",
+                ETF_MIN_LISTING_DAYS,
+                "%.OF",
+                OVERSEAS_KEYWORDS_REGEX,
+                OVERSEAS_KEYWORDS_REGEX,
+            ),
         )
         return list(cur.fetchall())
 
@@ -200,8 +248,8 @@ def fetch_fund_daily_range(client, ts_code: str, start_date: str, end_date: str)
     return pd.DataFrame(items, columns=fields)
 
 
-def fetch_fund_daily_all(client, ts_code: str, start_date: str) -> pd.DataFrame:
-    end_date = latest_possible_trade_date()
+def fetch_fund_daily_all(client, ts_code: str, start_date: str, end_date: str | None = None) -> pd.DataFrame:
+    end_date = end_date or latest_possible_trade_date()
     if start_date > end_date:
         return pd.DataFrame(columns=TUSHARE_FIELDS)
 
@@ -262,6 +310,18 @@ def upsert_rows(conn, df: pd.DataFrame) -> int:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Import ETF daily quotes from Tushare fund_daily.")
+    parser.add_argument("--ts-codes", nargs="+", help="Explicit ETF codes to import, e.g. 510300.SH.")
+    parser.add_argument("--start-date", help="Override start date as YYYYMMDD for explicit --ts-codes imports.")
+    parser.add_argument("--end-date", help="Override end date as YYYYMMDD.")
+    parser.add_argument(
+        "--all-domestic-passive",
+        action="store_true",
+        help="Import every live non-QDII exchange passive ETF in passive_etf, not only sector/theme ETFs.",
+    )
+    parser.add_argument("--limit", type=int, help="Import only the first N selected ETFs for a bounded run.")
+    args = parser.parse_args()
+
     client = create_client()
     DATA_DIR.mkdir(exist_ok=True)
 
@@ -270,9 +330,21 @@ def main() -> int:
         print("Applying schema (idempotent)...")
         apply_schema(conn)
 
-        print("\n查询行业/题材 ETF 清单...")
-        etf_list = fetch_sector_etf_list(conn)
-        print(f"  共 {len(etf_list)} 只 ETF 命中关键词")
+        if args.ts_codes:
+            etf_list = [(code, "", "explicit", None) for code in args.ts_codes]
+            print("\n使用显式 ETF 清单...")
+            print(f"  共 {len(etf_list)} 只 ETF: {', '.join(args.ts_codes)}")
+        elif args.all_domestic_passive:
+            print("\n查询全部境内在市被动 ETF 清单...")
+            etf_list = fetch_domestic_passive_etf_list(conn)
+            print(f"  共 {len(etf_list)} 只 ETF")
+        else:
+            print("\n查询行业/题材 ETF 清单...")
+            etf_list = fetch_sector_etf_list(conn)
+            print(f"  共 {len(etf_list)} 只 ETF 命中关键词")
+        if args.limit is not None:
+            etf_list = etf_list[: args.limit]
+            print(f"  limit 后处理 {len(etf_list)} 只 ETF")
 
         print("\n读取 fund_daily 已有续传起点...")
         existing_last = fetch_existing_last_dates(conn)
@@ -284,8 +356,8 @@ def main() -> int:
         failed_fetch = 0
 
         for idx, (ts_code, extname, index_name, list_date) in enumerate(etf_list, 1):
-            start_date = resolve_start_date(ts_code, list_date, existing_last)
-            end_date = latest_possible_trade_date()
+            start_date = args.start_date or resolve_start_date(ts_code, list_date, existing_last)
+            end_date = args.end_date or latest_possible_trade_date()
             if start_date > end_date:
                 skipped_no_new += 1
                 continue
@@ -293,7 +365,7 @@ def main() -> int:
             print(f"[{idx}/{len(etf_list)}] {ts_code} {extname} ({index_name}) "
                   f"start={start_date}")
             try:
-                raw = fetch_fund_daily_all(client, ts_code, start_date)
+                raw = fetch_fund_daily_all(client, ts_code, start_date, end_date)
             except Exception as exc:
                 failed_fetch += 1
                 print(f"  FAIL: {exc}")

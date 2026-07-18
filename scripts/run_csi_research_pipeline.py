@@ -3,8 +3,9 @@
 
 Pipeline steps:
 1. Optionally sync market/index/ETF daily data through the existing market sync.
-2. Refresh East Money H2 industry research metadata used as ex-ante features.
-3. Run the regime-aware CSI research backtest and validate the output.
+2. Fail closed on stale or internally discontinuous domestic passive ETF prices.
+3. Refresh East Money H2 industry research metadata used as ex-ante features.
+4. Run the regime-aware CSI research backtest and validate the output.
 """
 
 from __future__ import annotations
@@ -215,12 +216,7 @@ def validate_generalization_report() -> dict[str, Any]:
         failed = [name for name, ok in validation["checks"].items() if not ok]
         summaries = payload.get("summaries", {})
         context = []
-        for key in [
-            "execution_drift",
-            "random_annual_month_drift",
-            "random_quarterly_month_drift",
-            "monthly_pressure",
-        ]:
+        for key in ["execution_drift", "phase_schedule_matrix"]:
             if key in summaries:
                 summary = summaries[key]
                 context.append(
@@ -228,6 +224,12 @@ def validate_generalization_report() -> dict[str, Any]:
                     f"min_final={summary['min_final_capital_wan']:.1f}万 "
                     f"worst_mdd={summary['worst_max_drawdown'] * 100:.1f}%"
                 )
+        for key, summary in summaries.get("by_schedule", {}).items():
+            context.append(
+                f"{key}={summary['pass_count']}/{summary['count']} "
+                f"min_final={summary['min_final_capital_wan']:.1f}万 "
+                f"worst_mdd={summary['worst_max_drawdown'] * 100:.1f}%"
+            )
         raise RuntimeError(f"generalization QA failed: {', '.join(failed)}; {'; '.join(context)}")
     return payload
 
@@ -344,6 +346,10 @@ def main() -> int:
 
     if not args.skip_market_sync:
         run_command("daily_market_data_sync", [sys.executable, "scripts/sync_daily_market_data.py"])
+    run_command(
+        "passive_etf_price_continuity_audit",
+        [sys.executable, "scripts/audit_passive_etf_price_continuity.py"],
+    )
     if args.sync_external_assets:
         run_command("external_asset_daily_sync", [sys.executable, "scripts/import_external_asset_daily.py"])
     if args.sync_cboe_option_indices:
@@ -777,6 +783,10 @@ def main() -> int:
             args.target_as_of or today.isoformat(),
         ],
     )
+    run_command(
+        "calendar_neutral_monthly_csi_targets",
+        [sys.executable, "scripts/generate_calendar_neutral_csi_targets.py"],
+    )
     if not args.skip_phase_ensemble_targets:
         run_command(
             "phase_ensemble_csi_portfolio_targets",
@@ -1007,18 +1017,14 @@ def main() -> int:
     print(
         "generalization: "
         f"stable={generalization_summary['validation']['stable']} "
-        f"base_final_capital={float(generalization_summary['base']['final_capital']):,.0f} "
-        f"base_max_drawdown={float(generalization_summary['base']['max_drawdown']) * 100:.1f}% "
+        f"base_final_capital={float(generalization_summary['production_reference']['final_capital']):,.0f} "
+        f"base_max_drawdown={float(generalization_summary['production_reference']['max_drawdown']) * 100:.1f}% "
         f"drift_min_annualized={float(generalization_summary['summaries']['execution_drift']['min_annualized_return']) * 100:.1f}% "
         f"drift_worst_drawdown={float(generalization_summary['summaries']['execution_drift']['worst_max_drawdown']) * 100:.1f}% "
-        f"annual_month_drift_pass={generalization_summary['summaries']['random_annual_month_drift']['pass_count']}/"
-        f"{generalization_summary['summaries']['random_annual_month_drift']['count']} "
-        f"annual_month_drift_min_annualized={float(generalization_summary['summaries']['random_annual_month_drift']['min_annualized_return']) * 100:.1f}% "
-        f"annual_month_drift_worst_drawdown={float(generalization_summary['summaries']['random_annual_month_drift']['worst_max_drawdown']) * 100:.1f}% "
-        f"month_drift_min_annualized={float(generalization_summary['summaries']['random_quarterly_month_drift']['min_annualized_return']) * 100:.1f}% "
-        f"month_drift_worst_drawdown={float(generalization_summary['summaries']['random_quarterly_month_drift']['worst_max_drawdown']) * 100:.1f}% "
-        f"monthly_pressure_min_annualized={float(generalization_summary['summaries']['monthly_pressure']['min_annualized_return']) * 100:.1f}% "
-        f"monthly_pressure_worst_drawdown={float(generalization_summary['summaries']['monthly_pressure']['worst_max_drawdown']) * 100:.1f}%"
+        f"phase_matrix_pass={generalization_summary['summaries']['phase_schedule_matrix']['pass_count']}/"
+        f"{generalization_summary['summaries']['phase_schedule_matrix']['count']} "
+        f"phase_matrix_min_annualized={float(generalization_summary['summaries']['phase_schedule_matrix']['min_annualized_return']) * 100:.1f}% "
+        f"phase_matrix_worst_drawdown={float(generalization_summary['summaries']['phase_schedule_matrix']['worst_max_drawdown']) * 100:.1f}%"
     )
     print("research_imports=" + json.dumps(research_stats, ensure_ascii=False, sort_keys=True))
     print(f"report={REPORT_JSON}")
