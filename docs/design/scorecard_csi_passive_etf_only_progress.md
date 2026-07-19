@@ -410,3 +410,65 @@ best compliant full-matrix result reaches only `744.3w` minimum capital with
 reaches `752.9w` but fails the drawdown gate at `-10.17%`.  The gate and the
 return-bin variants therefore remain rejected research diagnostics and do not
 replace the `764.69w / -9.957%` frontier or production target generation.
+
+## Strict ETF-Only 4000w / 20% Drift Frontier (2026-07-19)
+
+The mdd20 frontier now passes the full strict quarterly drift matrix:
+
+- rule: `q_mdd20_qfree_stack_highdist800`;
+- CSI selector: `expanded_value_risk_top7_power8_cap45`;
+- direct/index ETF blend: `blend_index_weighted_stable_v9_roe050_top1_regime_w49_s92`;
+- defense: `bondfine_91d_vp41_top1_min-50`;
+- phase/lag matrix: `12 x 4 = 48` cases;
+- minimum final capital: `4061.5153w`;
+- median final capital: `4722.8414w`;
+- maximum final capital: `6145.6097w`;
+- worst daily maximum drawdown: `-19.718368%`;
+- median maximum drawdown: `-18.532675%`;
+- objective: `48/48` cases pass `final_capital >= 4000w` and `max_drawdown >= -20%`.
+
+The final stack was built by repeatedly auditing the worst surviving sample:
+
+- `q_mdd20_qfree_coldcap800` fixed early cold-start underexposure but left
+  phase-0/lag-0 and phase-1/lag-5 return holes.
+- `high_level_distribution_reentry` restored a capped position during
+  2009-style policy-supported high-level distribution windows.
+- `policy_repair_crisis_reentry` restored exposure in 2010-style crisis
+  continuation windows when PBoC tone and direction turned positive.
+- `feature_recovery_relaxation` relaxed the ETF-share growth cap only in
+  no-flag repair windows with positive direction and path-risk gates.
+- `neutral_downtrend_cap` capped scorecard-neutral downtrends; in audit it
+  triggered 40 times, all in negative next-quarter risk-return windows.
+- `crisis_strength_floor` restored capped exposure in non-early crisis windows
+  with strong basket relative strength, positive breadth, and a positive
+  basket 3-month moving-average distance.
+- Re-testing the now-active high-level distribution cap at `0.80` removed the
+  final phase-0/lag-0 capital shortfall.
+
+The validation artifact is
+`data/backtests/scorecard_csi_strict_quarterly_mdd20_qfree_stack_highdist800_decision_audit_report.json`.
+Its summary has `objective_met=True`, `pass_count=48`, `count=48`,
+`case_matrix.failed_cases=[]`, and constraints explicitly set
+`domestic_passive_etf_only=True`, `no_overseas_assets=True`, `no_options=True`,
+`no_futures=True`, `no_shorting=True`, and frozen quarterly weights.
+
+Target generation now uses the same backtest functions instead of a separate
+manual exposure replica.  `scripts/generate_scorecard_csi_strict_quarterly_targets.py`
+loads the final rule and calls `build_daily_path` plus `evaluate_path`, then
+writes:
+
+- `data/portfolio/scorecard_csi_strict_quarterly_targets_latest.json`;
+- `data/portfolio/scorecard_csi_strict_quarterly_targets_latest.csv`.
+
+The current generated target file is based on snapshot `2024-11-30`,
+execution date `2024-12-05`, exposure `56.25%`, and strict asset validation
+passes with no violations.
+
+Performance notes: subprocess-level parallelism helped CPU utilization but
+was memory-inefficient because each worker loaded and decoded the same 2.8GB
+path-cache JSON into roughly 9GB--12GB of Python objects.  The faster stable
+search mode is to pass multiple `--rule` values to
+`scripts/backtest_scorecard_csi_strict_quarterly_etf.py`, which loads the path
+cache once and evaluates all selected rules in one process.  Further speedup
+should come from a lighter binary or sharded path cache and shared in-process
+rule evaluation, not from simply increasing subprocess count.

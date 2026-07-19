@@ -14,6 +14,7 @@ import csv
 import json
 import statistics
 import sys
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
 from datetime import date
 from pathlib import Path
@@ -79,6 +80,7 @@ TARGET_MDD = STRICT_OBJECTIVE.minimum_max_drawdown
 
 OUT_DIR = ROOT / "data" / "backtests"
 EXECUTION_LAGS = (0, 1, 3, 5)
+PATH_CACHE_VERSION = "strict_quarterly_paths_v1"
 
 ANNUAL_MARKET_SCORECARD = AllocationPolicy(
     "strict_annual_market_scorecard",
@@ -142,6 +144,15 @@ class StrictQuarterlyRule:
     feature_exposure_cap_name: str | None = None
     feature_exposure_cap_threshold: float | None = None
     feature_exposure_cap_value: float | None = None
+    feature_recovery_relaxed_cap: float | None = None
+    feature_recovery_score_lte: int = -2
+    feature_recovery_direction_gt: float = 0.0
+    feature_recovery_cs300_6m_lte: float = -0.10
+    feature_recovery_basket_drawdown_6m_lte: float = -0.15
+    neutral_downtrend_cap: float | None = None
+    neutral_downtrend_score_eq: int = 0
+    neutral_downtrend_cs300_6m_lte: float = -0.05
+    neutral_downtrend_ma_6m_distance_lte: float = -0.05
     feature_cushion_multiplier_name: str | None = None
     feature_cushion_multiplier_max_value: float | None = None
     feature_cushion_multiplier_value: float | None = None
@@ -155,6 +166,21 @@ class StrictQuarterlyRule:
     direction_risk_gate_rejection_cap: float | None = None
     cold_start_price_damage_cap: float | None = None
     crisis_relative_strength_reentry_cap: float | None = None
+    crisis_strength_floor_cap: float | None = None
+    crisis_capitulation_reentry_cap: float | None = None
+    crisis_capitulation_cs300_return_6m_lte: float = -0.45
+    crisis_capitulation_basket_drawdown_6m_lte: float = -0.45
+    high_level_distribution_reentry_cap: float | None = None
+    high_level_distribution_reentry_score_lte: int = 0
+    high_level_distribution_reentry_direction_gt: float = 0.0
+    high_level_distribution_reentry_pboc_gte: float = 10.0
+    high_level_distribution_reentry_cs300_6m_gte: float = 0.20
+    policy_repair_crisis_reentry_cap: float | None = None
+    policy_repair_crisis_score_lte: int = 0
+    policy_repair_crisis_direction_gt: float = 0.0
+    policy_repair_crisis_pboc_gte: float = 20.0
+    policy_repair_crisis_cs300_6m_lte: float = -0.15
+    policy_repair_crisis_basket_drawdown_6m_lte: float = -0.15
     feature_risk_safe_gate_clusters: tuple[str, ...] | None = None
     feature_risk_safe_gate_block_flags: tuple[str, ...] = ()
     risk_flag_exit_count: int | None = 3
@@ -342,6 +368,69 @@ def quality_multiplier_trend_confirmed(market_state: dict[str, Any]) -> bool:
     )
 
 
+def encode_path_value(value: Any) -> Any:
+    if isinstance(value, date):
+        return {"__date__": value.isoformat()}
+    if isinstance(value, dict):
+        return {key: encode_path_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [encode_path_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [encode_path_value(item) for item in value]
+    return value
+
+
+def decode_path_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        if set(value) == {"__date__"}:
+            return date.fromisoformat(str(value["__date__"]))
+        return {key: decode_path_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [decode_path_value(item) for item in value]
+    return value
+
+
+def path_cache_file(
+    cache_dir: Path,
+    *,
+    selector_name: str,
+    direct_policy_name: str,
+    online_selector: bool,
+    online_ridge_selector: bool,
+    bear_signal_timing: str,
+) -> Path:
+    slug = "__".join(
+        [
+            PATH_CACHE_VERSION,
+            selector_name,
+            direct_policy_name,
+            f"online{int(online_selector)}",
+            f"ridge{int(online_ridge_selector)}",
+            f"bear_{bear_signal_timing}",
+        ]
+    )
+    return cache_dir / f"{slug}.json"
+
+
+def load_cached_paths(path: Path) -> list[dict[str, Any]] | None:
+    if not path.exists():
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("version") != PATH_CACHE_VERSION:
+        return None
+    return [decode_path_value(item) for item in payload["paths"]]
+
+
+def write_cached_paths(path: Path, paths: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "version": PATH_CACHE_VERSION,
+        "path_count": len(paths),
+        "paths": encode_path_value(paths),
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+
 def crisis_rebound_state(market_state: dict[str, Any]) -> str:
     """Classify visible price damage before policy-led acceleration."""
 
@@ -396,6 +485,198 @@ def crisis_relative_strength_reentry_signal(
         and basket_breadth >= 0.30
         and basket_ma_distance is not None
         and basket_ma_distance >= 0.0
+    )
+
+
+def crisis_capitulation_reentry_signal(
+    market_state: dict[str, Any],
+    scorecard_items: Iterable[Mapping[str, Any]],
+    *,
+    raw_base_weight: float,
+    active_hard_exit_flags: Sequence[str],
+    cs300_return_6m_lte: float,
+    basket_drawdown_6m_lte: float,
+) -> bool:
+    """Permit a capped crisis re-entry when the annual scorecard is too blunt.
+
+    This gate targets the observed 2008 failure mode: annual allocation goes to
+    zero after a large crash despite low valuation and explicit support signals.
+    """
+
+    def number(name: str) -> float | None:
+        raw = market_state.get(name)
+        return float(raw) if isinstance(raw, (int, float)) else None
+
+    item_names = {
+        str(item.get("name") or "")
+        for item in scorecard_items
+        if isinstance(item, Mapping)
+    }
+    cs300_return_6m = number("cs300_return_6m")
+    basket_drawdown_6m = number("basket_drawdown_6m")
+    return bool(
+        raw_base_weight <= 1e-12
+        and "crisis_continuation_flag" in active_hard_exit_flags
+        and market_state.get("early_history_crisis_repricing_flag")
+        and cs300_return_6m is not None
+        and cs300_return_6m <= cs300_return_6m_lte
+        and basket_drawdown_6m is not None
+        and basket_drawdown_6m <= basket_drawdown_6m_lte
+        and "PE<15+ROE上升(真底部)" in item_names
+        and (
+            "国家队入场" in item_names
+            or "全球同步刺激" in item_names
+        )
+    )
+
+
+def scorecard_top_items_from_row(row: Mapping[str, Any]) -> Iterable[Mapping[str, Any]]:
+    items = row.get("scorecard_top_items")
+    if isinstance(items, Iterable) and not isinstance(items, (str, bytes, Mapping)):
+        return items
+    context = row.get("scorecard_context")
+    if isinstance(context, Mapping):
+        context_items = context.get("top_items")
+        if isinstance(context_items, Iterable) and not isinstance(
+            context_items, (str, bytes, Mapping)
+        ):
+            return context_items
+    return ()
+
+
+def scorecard_score_from_row(row: Mapping[str, Any]) -> int | None:
+    raw = row.get("scorecard_score")
+    if isinstance(raw, (int, float)):
+        return int(raw)
+    context = row.get("scorecard_context")
+    if isinstance(context, Mapping):
+        context_score = context.get("score")
+        if isinstance(context_score, (int, float)):
+            return int(context_score)
+    return None
+
+
+def high_level_distribution_reentry_signal(
+    market_state: dict[str, Any],
+    *,
+    active_hard_exit_flags: Sequence[str],
+    scorecard_score: int | None,
+    direction_score: float | None,
+    score_lte: int,
+    direction_gt: float,
+    pboc_gte: float,
+    cs300_6m_gte: float,
+) -> bool:
+    def number(name: str) -> float | None:
+        raw = market_state.get(name)
+        return float(raw) if isinstance(raw, (int, float)) else None
+
+    pboc_tone = number("pboc_outlook_net_tone")
+    cs300_return_6m = number("cs300_return_6m")
+    return bool(
+        active_hard_exit_flags == ["high_level_distribution_flag"]
+        and scorecard_score is not None
+        and scorecard_score <= score_lte
+        and direction_score is not None
+        and direction_score > direction_gt
+        and pboc_tone is not None
+        and pboc_tone >= pboc_gte
+        and cs300_return_6m is not None
+        and cs300_return_6m >= cs300_6m_gte
+        and not market_state.get("daily_margin_rally_flag")
+    )
+
+
+def policy_repair_crisis_reentry_signal(
+    market_state: dict[str, Any],
+    *,
+    active_hard_exit_flags: Sequence[str],
+    scorecard_score: int | None,
+    direction_score: float | None,
+    score_lte: int,
+    direction_gt: float,
+    pboc_gte: float,
+    cs300_6m_lte: float,
+    basket_drawdown_6m_lte: float,
+) -> bool:
+    def number(name: str) -> float | None:
+        raw = market_state.get(name)
+        return float(raw) if isinstance(raw, (int, float)) else None
+
+    pboc_tone = number("pboc_outlook_net_tone")
+    cs300_return_6m = number("cs300_return_6m")
+    basket_drawdown_6m = number("basket_drawdown_6m")
+    return bool(
+        active_hard_exit_flags == ["crisis_continuation_flag"]
+        and scorecard_score is not None
+        and scorecard_score <= score_lte
+        and direction_score is not None
+        and direction_score > direction_gt
+        and pboc_tone is not None
+        and pboc_tone >= pboc_gte
+        and cs300_return_6m is not None
+        and cs300_return_6m <= cs300_6m_lte
+        and basket_drawdown_6m is not None
+        and basket_drawdown_6m <= basket_drawdown_6m_lte
+        and not market_state.get("daily_margin_rally_flag")
+    )
+
+
+def feature_recovery_relaxation_signal(
+    market_state: dict[str, Any],
+    *,
+    active_risk_flags: Sequence[str],
+    scorecard_score: int | None,
+    direction_score: float | None,
+    direction_risk_gate_decision: Mapping[str, Any],
+    score_lte: int,
+    direction_gt: float,
+    cs300_6m_lte: float,
+    basket_drawdown_6m_lte: float,
+) -> bool:
+    def number(name: str) -> float | None:
+        raw = market_state.get(name)
+        return float(raw) if isinstance(raw, (int, float)) else None
+
+    cs300_return_6m = number("cs300_return_6m")
+    basket_drawdown_6m = number("basket_drawdown_6m")
+    return bool(
+        not active_risk_flags
+        and scorecard_score is not None
+        and scorecard_score <= score_lte
+        and direction_score is not None
+        and direction_score > direction_gt
+        and int(direction_risk_gate_decision.get("predicted_direction") or 0) >= 1
+        and cs300_return_6m is not None
+        and cs300_return_6m <= cs300_6m_lte
+        and basket_drawdown_6m is not None
+        and basket_drawdown_6m <= basket_drawdown_6m_lte
+        and not market_state.get("daily_margin_rally_flag")
+    )
+
+
+def neutral_downtrend_cap_signal(
+    market_state: dict[str, Any],
+    *,
+    active_risk_flags: Sequence[str],
+    scorecard_score: int | None,
+    score_eq: int,
+    cs300_6m_lte: float,
+    ma_6m_distance_lte: float,
+) -> bool:
+    def number(name: str) -> float | None:
+        raw = market_state.get(name)
+        return float(raw) if isinstance(raw, (int, float)) else None
+
+    cs300_return_6m = number("cs300_return_6m")
+    cs300_ma_6m_distance = number("cs300_ma_6m_distance")
+    return bool(
+        not active_risk_flags
+        and scorecard_score == score_eq
+        and cs300_return_6m is not None
+        and cs300_return_6m <= cs300_6m_lte
+        and cs300_ma_6m_distance is not None
+        and cs300_ma_6m_distance <= ma_6m_distance_lte
     )
 
 
@@ -2319,6 +2600,237 @@ RULES += tuple(
 RULES += tuple(
     replace(
         rule,
+        name=f"q_mdd20_exp_dir{int(round(direction_multiplier * 1000)):04d}",
+        direction_policy=replace(
+            rule.direction_policy,
+            name=f"{rule.direction_policy.name}_mdd20_m{direction_multiplier:.3f}",
+            nonnegative_exposure_multiplier=direction_multiplier,
+        ),
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_failure_signal_v1"
+    for direction_multiplier in (1.60, 1.75, 2.00, 2.25, 2.50)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"q_mdd20_exp_floor{int(round(floor_pct * 1000)):03d}",
+        floor_pct=floor_pct,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_failure_signal_v1"
+    for floor_pct in (0.72, 0.74, 0.76, 0.77, 0.79)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"q_mdd20_exp_riskcap{int(round(risk_cap * 1000)):03d}",
+        feature_risk_cap=risk_cap,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_failure_signal_v1"
+    for risk_cap in (0.18, 0.20, 0.24, 0.28, 0.32)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"q_mdd20_exp_rejectcap{int(round(rejection_cap * 1000)):03d}",
+        direction_risk_gate_rejection_cap=rejection_cap,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_failure_signal_v1"
+    for rejection_cap in (0.60, 0.70, 0.80, 1.00)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"q_mdd20_exp_coldcap{int(round(cold_start_cap * 1000)):03d}",
+        feature_risk_cold_start_gate_cap=cold_start_cap,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_failure_signal_v1"
+    for cold_start_cap in (0.32, 0.36, 0.40, 0.45, 0.50)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=(
+            f"q_mdd20_exp_qcap_s{int(round(severe_cap * 100)):02d}"
+            f"_c{int(round(correction_cap * 100)):02d}"
+        ),
+        quality_score_high_severe_crisis_cap=severe_cap,
+        quality_score_high_correction_cap=correction_cap,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_failure_signal_v1"
+    for severe_cap, correction_cap in (
+        (0.64, 0.36),
+        (0.64, 0.45),
+        (0.64, 0.56),
+        (0.80, 0.36),
+        (0.80, 0.45),
+        (0.80, 0.56),
+        (1.00, 0.45),
+        (1.00, 0.56),
+    )
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"q_mdd20_exp_qcap_s100_c{int(round(correction_cap * 100)):02d}",
+        quality_score_high_severe_crisis_cap=1.0,
+        quality_score_high_correction_cap=correction_cap,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_failure_signal_v1"
+    for correction_cap in (0.58, 0.60, 0.62, 0.64, 0.70, 0.80, 0.90, 1.00)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"q_mdd20_qfree_dir{int(round(direction_multiplier * 1000)):04d}",
+        direction_policy=replace(
+            rule.direction_policy,
+            name=f"{rule.direction_policy.name}_qfree_m{direction_multiplier:.3f}",
+            nonnegative_exposure_multiplier=direction_multiplier,
+        ),
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_exp_qcap_s100_c100"
+    for direction_multiplier in (1.60, 1.75, 2.00, 2.25, 2.50)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"q_mdd20_qfree_floor{int(round(floor_pct * 1000)):03d}",
+        floor_pct=floor_pct,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_exp_qcap_s100_c100"
+    for floor_pct in (0.70, 0.72, 0.74, 0.76, 0.80)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"q_mdd20_qfree_riskcap{int(round(risk_cap * 1000)):03d}",
+        feature_risk_cap=risk_cap,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_exp_qcap_s100_c100"
+    for risk_cap in (0.18, 0.20, 0.24, 0.28, 0.32, 0.40)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"q_mdd20_qfree_rejectcap{int(round(rejection_cap * 1000)):03d}",
+        direction_risk_gate_rejection_cap=rejection_cap,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_exp_qcap_s100_c100"
+    for rejection_cap in (0.60, 0.70, 0.80, 1.00)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"q_mdd20_qfree_coldcap{int(round(cold_start_cap * 1000)):03d}",
+        feature_risk_cold_start_gate_cap=cold_start_cap,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_exp_qcap_s100_c100"
+    for cold_start_cap in (0.32, 0.36, 0.40, 0.45, 0.50, 0.56, 0.64, 0.70, 0.80, 1.00)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"q_mdd20_qfree_capitulation{int(round(reentry_cap * 1000)):03d}",
+        crisis_capitulation_reentry_cap=reentry_cap,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_qfree_coldcap800"
+    for reentry_cap in (0.08, 0.12, 0.16, 0.20, 0.24, 0.30, 0.36, 0.40)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"q_mdd20_qfree_highdist{int(round(reentry_cap * 1000)):03d}",
+        high_level_distribution_reentry_cap=reentry_cap,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_qfree_coldcap800"
+    for reentry_cap in (0.16, 0.20, 0.24, 0.30, 0.36, 0.45, 0.60, 0.80)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"q_mdd20_qfree_policycrisis{int(round(reentry_cap * 1000)):03d}",
+        policy_repair_crisis_reentry_cap=reentry_cap,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_qfree_highdist300"
+    for reentry_cap in (0.125, 0.16, 0.20, 0.24, 0.30, 0.36, 0.45, 0.60)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"q_mdd20_qfree_featurerec{int(round(relaxed_cap * 1000)):03d}",
+        feature_recovery_relaxed_cap=relaxed_cap,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_qfree_policycrisis600"
+    for relaxed_cap in (0.16, 0.20, 0.24, 0.30, 0.36, 0.45, 0.60)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"q_mdd20_qfree_neutraltrend{int(round(cap * 1000)):03d}",
+        neutral_downtrend_cap=cap,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_qfree_featurerec600"
+    for cap in (0.40, 0.50, 0.60, 0.70, 0.80)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"q_mdd20_qfree_crisisstrength{int(round(cap * 1000)):03d}",
+        crisis_strength_floor_cap=cap,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_qfree_neutraltrend400"
+    for cap in (0.16, 0.24, 0.30, 0.36, 0.45, 0.60, 0.80)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"q_mdd20_qfree_stack_highdist{int(round(cap * 1000)):03d}",
+        high_level_distribution_reentry_cap=cap,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_qfree_crisisstrength800"
+    for cap in (0.45, 0.60, 0.80)
+)
+
+RULES += tuple(
+    replace(
+        rule,
         name=(
             f"q_gapfixed_dedup_leverageexhaust_block_"
             f"cap{int(round(safe_cap * 1000)):03d}"
@@ -4230,7 +4742,39 @@ def evaluate_path(
                     "basket_volatility": basket_volatility,
                 },
             )
+            neutral_downtrend_cap_active = bool(
+                rule.neutral_downtrend_cap is not None
+                and neutral_downtrend_cap_signal(
+                    row["market_state"],
+                    active_risk_flags=active_risk_flags,
+                    scorecard_score=scorecard_score_from_row(row),
+                    score_eq=rule.neutral_downtrend_score_eq,
+                    cs300_6m_lte=rule.neutral_downtrend_cs300_6m_lte,
+                    ma_6m_distance_lte=(
+                        rule.neutral_downtrend_ma_6m_distance_lte
+                    ),
+                )
+            )
             before_stage = exposure
+            if neutral_downtrend_cap_active:
+                exposure = min(exposure, float(rule.neutral_downtrend_cap))
+            append_exposure_trace_stage(
+                exposure_trace,
+                "neutral_downtrend_cap",
+                before_stage,
+                exposure,
+                active=neutral_downtrend_cap_active,
+                details={
+                    "cap": rule.neutral_downtrend_cap,
+                    "score_eq": rule.neutral_downtrend_score_eq,
+                    "cs300_6m_lte": rule.neutral_downtrend_cs300_6m_lte,
+                    "ma_6m_distance_lte": (
+                        rule.neutral_downtrend_ma_6m_distance_lte
+                    ),
+                },
+            )
+            before_stage = exposure
+            before_feature_exposure_cap = exposure
             exposure, feature_cap_applied = apply_feature_exposure_cap(
                 exposure,
                 row["market_state"],
@@ -4251,6 +4795,49 @@ def evaluate_path(
                     "value": row["market_state"].get(rule.feature_exposure_cap_name)
                     if rule.feature_exposure_cap_name is not None
                     else None,
+                },
+            )
+            feature_recovery_relaxation_active = bool(
+                feature_cap_applied
+                and rule.feature_recovery_relaxed_cap is not None
+                and feature_recovery_relaxation_signal(
+                    row["market_state"],
+                    active_risk_flags=active_risk_flags,
+                    scorecard_score=scorecard_score_from_row(row),
+                    direction_score=direction_decision["score"],
+                    direction_risk_gate_decision=direction_risk_gate_decision,
+                    score_lte=rule.feature_recovery_score_lte,
+                    direction_gt=rule.feature_recovery_direction_gt,
+                    cs300_6m_lte=rule.feature_recovery_cs300_6m_lte,
+                    basket_drawdown_6m_lte=(
+                        rule.feature_recovery_basket_drawdown_6m_lte
+                    ),
+                )
+            )
+            before_stage = exposure
+            if feature_recovery_relaxation_active:
+                exposure = max(
+                    exposure,
+                    min(
+                        before_feature_exposure_cap,
+                        float(rule.feature_recovery_relaxed_cap),
+                    ),
+                )
+            append_exposure_trace_stage(
+                exposure_trace,
+                "feature_recovery_relaxation",
+                before_stage,
+                exposure,
+                active=feature_recovery_relaxation_active,
+                details={
+                    "cap": rule.feature_recovery_relaxed_cap,
+                    "pre_feature_cap_exposure": before_feature_exposure_cap,
+                    "score_lte": rule.feature_recovery_score_lte,
+                    "direction_gt": rule.feature_recovery_direction_gt,
+                    "cs300_6m_lte": rule.feature_recovery_cs300_6m_lte,
+                    "basket_drawdown_6m_lte": (
+                        rule.feature_recovery_basket_drawdown_6m_lte
+                    ),
                 },
             )
             exposure_before_exit_stages = exposure
@@ -4313,6 +4900,142 @@ def evaluate_path(
                 active=hard_exit_active,
                 details={"flags": active_hard_exit_flags},
             )
+            crisis_capitulation_reentry_active = bool(
+                rule.crisis_capitulation_reentry_cap is not None
+                and crisis_capitulation_reentry_signal(
+                    row["market_state"],
+                    scorecard_top_items_from_row(row),
+                    raw_base_weight=raw_base_weight,
+                    active_hard_exit_flags=active_hard_exit_flags,
+                    cs300_return_6m_lte=(
+                        rule.crisis_capitulation_cs300_return_6m_lte
+                    ),
+                    basket_drawdown_6m_lte=(
+                        rule.crisis_capitulation_basket_drawdown_6m_lte
+                    ),
+                )
+            )
+            before_stage = exposure
+            if crisis_capitulation_reentry_active:
+                exposure = max(
+                    exposure,
+                    min(
+                        rule.max_exposure,
+                        cppi_limit,
+                        float(rule.crisis_capitulation_reentry_cap),
+                    ),
+                )
+            append_exposure_trace_stage(
+                exposure_trace,
+                "crisis_capitulation_reentry",
+                before_stage,
+                exposure,
+                active=crisis_capitulation_reentry_active,
+                details={
+                    "cap": rule.crisis_capitulation_reentry_cap,
+                    "cppi_limit": cppi_limit,
+                    "raw_base_weight": raw_base_weight,
+                    "hard_exit_flags": active_hard_exit_flags,
+                    "cs300_return_6m_lte": (
+                        rule.crisis_capitulation_cs300_return_6m_lte
+                    ),
+                    "basket_drawdown_6m_lte": (
+                        rule.crisis_capitulation_basket_drawdown_6m_lte
+                    ),
+                },
+            )
+            high_level_distribution_reentry_active = bool(
+                rule.high_level_distribution_reentry_cap is not None
+                and high_level_distribution_reentry_signal(
+                    row["market_state"],
+                    active_hard_exit_flags=active_hard_exit_flags,
+                    scorecard_score=scorecard_score_from_row(row),
+                    direction_score=direction_decision["score"],
+                    score_lte=rule.high_level_distribution_reentry_score_lte,
+                    direction_gt=(
+                        rule.high_level_distribution_reentry_direction_gt
+                    ),
+                    pboc_gte=rule.high_level_distribution_reentry_pboc_gte,
+                    cs300_6m_gte=(
+                        rule.high_level_distribution_reentry_cs300_6m_gte
+                    ),
+                )
+            )
+            before_stage = exposure
+            if high_level_distribution_reentry_active:
+                exposure = max(
+                    exposure,
+                    min(
+                        rule.max_exposure,
+                        cppi_limit,
+                        float(rule.high_level_distribution_reentry_cap),
+                    ),
+                )
+            append_exposure_trace_stage(
+                exposure_trace,
+                "high_level_distribution_reentry",
+                before_stage,
+                exposure,
+                active=high_level_distribution_reentry_active,
+                details={
+                    "cap": rule.high_level_distribution_reentry_cap,
+                    "cppi_limit": cppi_limit,
+                    "hard_exit_flags": active_hard_exit_flags,
+                    "score_lte": rule.high_level_distribution_reentry_score_lte,
+                    "direction_gt": (
+                        rule.high_level_distribution_reentry_direction_gt
+                    ),
+                    "pboc_gte": rule.high_level_distribution_reentry_pboc_gte,
+                    "cs300_6m_gte": (
+                        rule.high_level_distribution_reentry_cs300_6m_gte
+                    ),
+                },
+            )
+            policy_repair_crisis_reentry_active = bool(
+                rule.policy_repair_crisis_reentry_cap is not None
+                and policy_repair_crisis_reentry_signal(
+                    row["market_state"],
+                    active_hard_exit_flags=active_hard_exit_flags,
+                    scorecard_score=scorecard_score_from_row(row),
+                    direction_score=direction_decision["score"],
+                    score_lte=rule.policy_repair_crisis_score_lte,
+                    direction_gt=rule.policy_repair_crisis_direction_gt,
+                    pboc_gte=rule.policy_repair_crisis_pboc_gte,
+                    cs300_6m_lte=rule.policy_repair_crisis_cs300_6m_lte,
+                    basket_drawdown_6m_lte=(
+                        rule.policy_repair_crisis_basket_drawdown_6m_lte
+                    ),
+                )
+            )
+            before_stage = exposure
+            if policy_repair_crisis_reentry_active:
+                exposure = max(
+                    exposure,
+                    min(
+                        rule.max_exposure,
+                        cppi_limit,
+                        float(rule.policy_repair_crisis_reentry_cap),
+                    ),
+                )
+            append_exposure_trace_stage(
+                exposure_trace,
+                "policy_repair_crisis_reentry",
+                before_stage,
+                exposure,
+                active=policy_repair_crisis_reentry_active,
+                details={
+                    "cap": rule.policy_repair_crisis_reentry_cap,
+                    "cppi_limit": cppi_limit,
+                    "hard_exit_flags": active_hard_exit_flags,
+                    "score_lte": rule.policy_repair_crisis_score_lte,
+                    "direction_gt": rule.policy_repair_crisis_direction_gt,
+                    "pboc_gte": rule.policy_repair_crisis_pboc_gte,
+                    "cs300_6m_lte": rule.policy_repair_crisis_cs300_6m_lte,
+                    "basket_drawdown_6m_lte": (
+                        rule.policy_repair_crisis_basket_drawdown_6m_lte
+                    ),
+                },
+            )
             crisis_relative_strength_reentry_active = bool(
                 rule.crisis_relative_strength_reentry_cap is not None
                 and active_hard_exit_flags == ["crisis_continuation_flag"]
@@ -4333,6 +5056,33 @@ def evaluate_path(
                 details={
                     "cap": rule.crisis_relative_strength_reentry_cap,
                     "pre_exit_exposure": exposure_before_exit_stages,
+                    "hard_exit_flags": active_hard_exit_flags,
+                },
+            )
+            crisis_strength_floor_active = bool(
+                rule.crisis_strength_floor_cap is not None
+                and active_hard_exit_flags == ["crisis_continuation_flag"]
+                and crisis_relative_strength_reentry_signal(row["market_state"])
+            )
+            before_stage = exposure
+            if crisis_strength_floor_active:
+                exposure = max(
+                    exposure,
+                    min(
+                        rule.max_exposure,
+                        cppi_limit,
+                        float(rule.crisis_strength_floor_cap),
+                    ),
+                )
+            append_exposure_trace_stage(
+                exposure_trace,
+                "crisis_strength_floor",
+                before_stage,
+                exposure,
+                active=crisis_strength_floor_active,
+                details={
+                    "cap": rule.crisis_strength_floor_cap,
+                    "cppi_limit": cppi_limit,
                     "hard_exit_flags": active_hard_exit_flags,
                 },
             )
@@ -4698,6 +5448,17 @@ def main() -> int:
             "quarterly signal snapshot."
         ),
     )
+    parser.add_argument(
+        "--path-cache-dir",
+        type=Path,
+        default=Path("data/backtests/cache/strict_quarterly_paths"),
+        help="Directory for reusable selector/direct-policy daily path caches.",
+    )
+    parser.add_argument(
+        "--no-path-cache",
+        action="store_true",
+        help="Disable loading and writing reusable daily path caches.",
+    )
     parser.add_argument("--output-prefix", default="data/backtests/scorecard_csi_strict_quarterly_etf")
     args = parser.parse_args()
 
@@ -4739,35 +5500,52 @@ def main() -> int:
         defensive_metas, defensive_series = load_defensive_etf_universe(conn)
         equity_metas, equity_series = load_equity_etf_return_universe(conn)
         trade_dates = [day for day, _value in index_series[CS300_CODE]]
-        paths_by_selector = {
-            (selector.name, direct_policy.name if direct_policy else "index_mapping"): [
-                build_daily_path(
-                    index_series,
-                    trade_dates,
-                    SCHEDULE_12M_3M,
-                    phase,
-                    lag,
-                    equity_metas,
-                    equity_series,
-                    ANNUAL_MARKET_SCORECARD,
-                    True,
-                    True,
-                    selector,
-                    direct_policy,
-                    args.online_selector,
-                    args.online_ridge_selector,
-                    True,
-                    max(MONTH_DRIFT_PHASES),
-                    max(EXECUTION_LAGS),
-                    date(2005, 2, 28),
-                    args.bear_signal_timing,
+        paths_by_selector = {}
+        cache_dir = args.path_cache_dir if args.path_cache_dir.is_absolute() else ROOT / args.path_cache_dir
+        for selector in selected_selectors:
+            for direct_policy in selected_direct_policies:
+                direct_name = direct_policy.name if direct_policy else "index_mapping"
+                cache_path = path_cache_file(
+                    cache_dir,
+                    selector_name=selector.name,
+                    direct_policy_name=direct_name,
+                    online_selector=args.online_selector,
+                    online_ridge_selector=args.online_ridge_selector,
+                    bear_signal_timing=args.bear_signal_timing,
                 )
-                for phase in MONTH_DRIFT_PHASES
-                for lag in EXECUTION_LAGS
-            ]
-            for selector in selected_selectors
-            for direct_policy in selected_direct_policies
-        }
+                paths = None if args.no_path_cache else load_cached_paths(cache_path)
+                if paths is None:
+                    paths = [
+                        build_daily_path(
+                            index_series,
+                            trade_dates,
+                            SCHEDULE_12M_3M,
+                            phase,
+                            lag,
+                            equity_metas,
+                            equity_series,
+                            ANNUAL_MARKET_SCORECARD,
+                            True,
+                            True,
+                            selector,
+                            direct_policy,
+                            args.online_selector,
+                            args.online_ridge_selector,
+                            True,
+                            max(MONTH_DRIFT_PHASES),
+                            max(EXECUTION_LAGS),
+                            date(2005, 2, 28),
+                            args.bear_signal_timing,
+                        )
+                        for phase in MONTH_DRIFT_PHASES
+                        for lag in EXECUTION_LAGS
+                    ]
+                    if not args.no_path_cache:
+                        write_cached_paths(cache_path, paths)
+                        print(f"Wrote path cache {cache_path}")
+                else:
+                    print(f"Loaded path cache {cache_path}")
+                paths_by_selector[(selector.name, direct_name)] = paths
     finally:
         conn.close()
 

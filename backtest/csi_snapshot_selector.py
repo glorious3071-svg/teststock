@@ -9,6 +9,7 @@ from datetime import date
 from typing import Any, Sequence
 
 from backtest.phase_features import (
+    DatedSeries,
     PHASE_FEATURE_STORE,
     moving_average_distance,
     realized_volatility,
@@ -906,6 +907,10 @@ def capped_score_power_weights(
     return {code: weight / total for code, weight in output.items()}
 
 
+def chunks(items: Sequence[str], size: int = 128) -> list[list[str]]:
+    return [list(items[index : index + size]) for index in range(0, len(items), size)]
+
+
 class SnapshotCSISelector:
     def __init__(self) -> None:
         self._recommendations: dict[date, dict[str, dict[str, Any]]] = {}
@@ -944,6 +949,125 @@ class SnapshotCSISelector:
         ] = {}
         self._etf_trackers: dict[str, list[tuple[str, date]]] = {}
         self._etf_daily: dict[str, list[tuple[date, float, float]]] = {}
+        self._etf_daily_dates: dict[str, list[date]] = {}
+        self._etf_daily_loaded_until: dict[str, date] = {}
+        self._dailybasic_dates: dict[str, list[date]] = {}
+
+    def _preload_candidate_inputs(self, cur, index_codes: set[str], snapshot: date) -> None:
+        missing_index = sorted(code for code in index_codes if code not in PHASE_FEATURE_STORE._index)
+        for batch in chunks(missing_index):
+            placeholders = ",".join(["%s"] * len(batch))
+            cur.execute(
+                f"""
+                SELECT ts_code, trade_date, close
+                FROM index_daily
+                WHERE ts_code IN ({placeholders}) AND close IS NOT NULL
+                ORDER BY ts_code, trade_date
+                """,
+                batch,
+            )
+            grouped: dict[str, list[tuple[date, float]]] = {code: [] for code in batch}
+            for code, day, close in cur.fetchall():
+                grouped[str(code)].append((day, float(close)))
+            for code, rows in grouped.items():
+                PHASE_FEATURE_STORE._index[code] = DatedSeries.from_rows(rows)
+
+        missing_dailybasic = sorted(code for code in index_codes if code not in self._dailybasic)
+        for batch in chunks(missing_dailybasic):
+            placeholders = ",".join(["%s"] * len(batch))
+            cur.execute(
+                f"""
+                SELECT ts_code, trade_date, pe_ttm, pb, turnover_rate_f
+                FROM index_dailybasic
+                WHERE ts_code IN ({placeholders})
+                ORDER BY ts_code, trade_date
+                """,
+                batch,
+            )
+            basic_grouped: dict[str, list[tuple[date, Any, Any, Any]]] = {
+                code: [] for code in batch
+            }
+            for code, day, pe, pb, turnover in cur.fetchall():
+                basic_grouped[str(code)].append((day, pe, pb, turnover))
+            for code, basic_rows in basic_grouped.items():
+                index_series = PHASE_FEATURE_STORE._index.get(code)
+                price_by_date = {
+                    day: value
+                    for day, value in zip(
+                        index_series.dates if index_series is not None else (),
+                        index_series.values if index_series is not None else (),
+                    )
+                }
+                self._index_prices[code] = price_by_date
+                self._dailybasic[code] = [
+                    (
+                        day,
+                        float(pe) if pe is not None and float(pe) > 0 else None,
+                        float(pb) if pb is not None and float(pb) > 0 else None,
+                        float(turnover)
+                        if turnover is not None and float(turnover) >= 0
+                        else None,
+                        price_by_date.get(day),
+                    )
+                    for day, pe, pb, turnover in basic_rows
+                ]
+                self._dailybasic_dates[code] = [row[0] for row in self._dailybasic[code]]
+
+        missing_trackers = sorted(code for code in index_codes if code not in self._etf_trackers)
+        for batch in chunks(missing_trackers):
+            placeholders = ",".join(["%s"] * len(batch))
+            cur.execute(
+                f"""
+                SELECT index_ts_code, ts_code, list_date
+                FROM passive_etf
+                WHERE index_ts_code IN ({placeholders})
+                  AND list_date IS NOT NULL
+                  AND (etf_type IS NULL OR etf_type!='QDII')
+                  AND (is_enhanced IS NULL OR is_enhanced=0)
+                  AND (ts_code LIKE '%%.SH' OR ts_code LIKE '%%.SZ')
+                ORDER BY index_ts_code, list_date, ts_code
+                """,
+                batch,
+            )
+            grouped_trackers: dict[str, list[tuple[str, date]]] = {code: [] for code in batch}
+            for index_code, etf_code, list_date in cur.fetchall():
+                grouped_trackers[str(index_code)].append((str(etf_code), list_date))
+            self._etf_trackers.update(grouped_trackers)
+
+        etf_codes = sorted(
+            {
+                etf_code
+                for code in index_codes
+                for etf_code, _list_date in [
+                    item
+                    for item in self._etf_trackers.get(code, [])
+                    if item[1] <= snapshot
+                ][:3]
+                if self._etf_daily_loaded_until.get(etf_code, date.min) < snapshot
+            }
+        )
+        for batch in chunks(etf_codes, 64):
+            placeholders = ",".join(["%s"] * len(batch))
+            cur.execute(
+                f"""
+                SELECT ts_code, trade_date, amount, pct_chg
+                FROM fund_daily
+                WHERE ts_code IN ({placeholders})
+                  AND trade_date <= %s
+                  AND amount IS NOT NULL AND amount>0
+                ORDER BY ts_code, trade_date
+                """,
+                [*batch, snapshot],
+            )
+            grouped_daily: dict[str, list[tuple[date, float, float]]] = {
+                code: [] for code in batch
+            }
+            for code, day, amount, pct_chg in cur.fetchall():
+                grouped_daily[str(code)].append((day, float(amount), float(pct_chg or 0.0)))
+            for code, rows in grouped_daily.items():
+                self._etf_daily[code] = rows
+                self._etf_daily_dates[code] = [row[0] for row in rows]
+                self._etf_daily_loaded_until[code] = snapshot
 
     def _etf_flow_features(self, cur, index_code: str, snapshot: date) -> dict[str, float | None]:
         empty = {
@@ -988,16 +1112,21 @@ class SnapshotCSISelector:
                     (day, float(amount), float(pct_chg or 0.0))
                     for day, amount, pct_chg in cur.fetchall()
                 ]
+                self._etf_daily_dates[code] = [row[0] for row in self._etf_daily[code]]
+                self._etf_daily_loaded_until[code] = date.max
             rows = self._etf_daily[code]
-            end = bisect_right([row[0] for row in rows], snapshot)
+            end = bisect_right(self._etf_daily_dates[code], snapshot)
             window = rows[max(0, end - 756) : end]
             if len(window) < 126:
                 continue
             amounts = [row[1] for row in window]
-            amount_1m = statistics.mean(amounts[-21:])
-            amount_6m = statistics.mean(amounts[-126:])
+            amount_1m = sum(amounts[-21:]) / 21.0
+            amount_6m = sum(amounts[-126:]) / 126.0
+            prefix_amounts = [0.0]
+            for value in amounts:
+                prefix_amounts.append(prefix_amounts[-1] + value)
             rolling_amount = [
-                statistics.mean(amounts[index - 20 : index + 1])
+                (prefix_amounts[index + 1] - prefix_amounts[index - 20]) / 21.0
                 for index in range(20, len(amounts))
             ]
             recent = window[-21:]
@@ -1059,8 +1188,9 @@ class SnapshotCSISelector:
                 )
                 for day, pe, pb, turnover in basic_rows
             ]
+            self._dailybasic_dates[code] = [row[0] for row in self._dailybasic[code]]
         rows = self._dailybasic[code]
-        end = bisect_right([row[0] for row in rows], snapshot)
+        end = bisect_right(self._dailybasic_dates[code], snapshot)
         window = rows[max(0, end - 756) : end]
         if len(window) < 126:
             return {
@@ -1090,10 +1220,13 @@ class SnapshotCSISelector:
             return sum(value <= current for value in values) / len(values)
 
         turnover = [float(row[3]) for row in window if row[3] is not None]
-        turnover_1m = statistics.mean(turnover[-21:]) if len(turnover) >= 21 else None
-        turnover_6m = statistics.mean(turnover[-126:]) if len(turnover) >= 126 else None
+        turnover_1m = sum(turnover[-21:]) / 21.0 if len(turnover) >= 21 else None
+        turnover_6m = sum(turnover[-126:]) / 126.0 if len(turnover) >= 126 else None
+        prefix_turnover = [0.0]
+        for value in turnover:
+            prefix_turnover.append(prefix_turnover[-1] + value)
         rolling_turnover = [
-            statistics.mean(turnover[index - 20 : index + 1])
+            (prefix_turnover[index + 1] - prefix_turnover[index - 20]) / 21.0
             for index in range(20, len(turnover))
         ]
         current = window[-1]
@@ -1377,6 +1510,7 @@ class SnapshotCSISelector:
             return self._features[snapshot]
         recommendations = self.recommendations(cur, snapshot)
         eligible = self.eligible_index_codes(cur, snapshot)
+        self._preload_candidate_inputs(cur, eligible, snapshot)
         rows = []
         for code in sorted(eligible):
             meta = recommendations.get(

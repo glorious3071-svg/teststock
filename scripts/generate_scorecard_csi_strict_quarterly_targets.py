@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate current holdings for the strict quarterly v5 passive-ETF frontier."""
+"""Generate current holdings for the strict quarterly passive-ETF frontier."""
 
 from __future__ import annotations
 
@@ -32,34 +32,31 @@ from backtest.phase_schedule import shift_month_end
 from backtest.strict_passive_etf_objective import validate_target_assets
 from db.connection import get_connection
 from scripts.backtest_calendar_neutral_csi_tipp import (
-    benchmark_bear_state,
+    build_daily_path,
     load_selector_price_series,
 )
 from scripts.backtest_scorecard_csi_dynamic_defense import load_price_series
 from scripts.backtest_scorecard_csi_midyear_risk import CS300_CODE
 from scripts.backtest_scorecard_csi_strict_quarterly_etf import (
     ANNUAL_MARKET_SCORECARD,
-    QUARTERLY_EXIT_FLAGS,
-    QUARTERLY_RISK_FLAGS,
+    EXECUTION_LAGS,
     RULES,
-    combined_target_weights,
-    market_recovery_signal,
+    evaluate_path,
 )
 from scripts.validate_scorecard_csi_generalization import (
     DEFAULT_RULE,
     DIRECTION_MATCHED_FEATURE_POLICY,
+    MONTH_DRIFT_PHASES,
     SCHEDULE_12M_3M,
-    allocation_target,
     apply_feature_policy,
-    schedule_execution_boundary,
     scorecard_detail,
 )
 
 
-RULE_NAME = "q_bdgrid_m308_bd05_e70_f893_m566_bc0_fc25"
-SELECTOR_NAME = "expanded_value_risk_top5"
-DIRECT_POLICY_NAME = "blend_index_weighted_stable_v5_top1_regime_w49_s71"
-DEFENSIVE_POLICY_NAME = "bondfine_105d_vp25_top1_min-50"
+RULE_NAME = "q_mdd20_qfree_stack_highdist800"
+SELECTOR_NAME = "expanded_value_risk_top7_power8_cap45"
+DIRECT_POLICY_NAME = "blend_index_weighted_stable_v9_roe050_top1_regime_w49_s92"
+DEFENSIVE_POLICY_NAME = "bondfine_91d_vp41_top1_min-50"
 OUT_PREFIX = ROOT / "data/portfolio/scorecard_csi_strict_quarterly_targets_latest"
 
 
@@ -105,141 +102,80 @@ def main() -> int:
         defensive_metas, defensive_series = load_defensive_etf_universe(conn)
         trade_dates = [day for day, _value in index_series[CS300_CODE]]
         data_as_of = min(args.as_of or trade_dates[-1], trade_dates[-1])
-        snapshot, cycle_entry = scheduled_snapshot(
-            data_as_of, args.phase_month_offset
-        )
-        while True:
-            try:
-                with conn.cursor() as cur:
-                    execution_date = schedule_execution_boundary(
-                        cur, snapshot, args.execution_lag_days
-                    )
-            except RuntimeError:
-                execution_date = data_as_of + timedelta(days=1)
-            if execution_date <= data_as_of:
-                break
-            snapshot = shift_month_end(snapshot, -3)
-            if cycle_entry > snapshot:
-                cycle_entry = shift_month_end(cycle_entry, -12)
-
-        with conn.cursor() as cur:
-            selected = SNAPSHOT_CSI_SELECTOR.select(cur, snapshot, selector)
-            if not selected:
-                raise RuntimeError(f"No CSI selection at {snapshot}")
-            index_weights = {
-                str(item["ts_code"]): float(item["weight"]) for item in selected
-            }
-            index_codes = sorted(index_weights)
-            market_state = PHASE_FEATURE_STORE.snapshot_features(
-                cur, index_codes, CS300_CODE, snapshot
-            )
-            detail = apply_feature_policy(
-                scorecard_detail(conn, execution_date.year, snapshot, DEFAULT_RULE),
-                SCHEDULE_12M_3M,
-                DIRECTION_MATCHED_FEATURE_POLICY,
-            )
-            base_pct, allocation_reasons = allocation_target(
-                detail,
-                ANNUAL_MARKET_SCORECARD,
-                3,
-                market_state,
-            )
-
-        mapped_weights = map_indices_to_etfs(
-            index_weights,
-            snapshot,
-            equity_metas,
-            etf_series=equity_series,
-            allow_early_broad_proxy=True,
-            index_series=index_series,
-        )
-        direct_weights = select_direct_equity_etfs(
+        path = build_daily_path(
+            index_series,
+            trade_dates,
+            SCHEDULE_12M_3M,
+            args.phase_month_offset,
+            args.execution_lag_days,
             equity_metas,
             equity_series,
-            snapshot,
+            ANNUAL_MARKET_SCORECARD,
+            True,
+            True,
+            selector,
             direct_policy,
-            benchmark_series=index_series[CS300_CODE],
+            False,
+            False,
+            True,
+            max(MONTH_DRIFT_PHASES),
+            max(EXECUTION_LAGS),
+            date(2005, 2, 28),
+            "execution",
         )
-        market_state.update(
-            direct_selector_diagnostics(
-                equity_metas,
-                equity_series,
-                snapshot,
-                direct_policy,
-            )
-        )
-        direct_share = direct_blend_share(direct_policy, market_state) if direct_weights else 0.0
-        risk_weights = {
-            code: (1.0 - direct_share) * weight
-            for code, weight in mapped_weights.items()
-        }
-        for code, weight in direct_weights.items():
-            risk_weights[code] = risk_weights.get(code, 0.0) + direct_share * weight
-        risk_total = sum(risk_weights.values())
-        if risk_total <= 0:
-            raise RuntimeError("No investable equity ETF mapping")
-        risk_weights = {code: weight / risk_total for code, weight in risk_weights.items()}
-
-        floor = args.budget_peak * rule.floor_pct
-        cushion = max(0.0, args.capital - floor)
-        exposure = min(
-            rule.max_exposure,
-            base_pct / 100.0 * rule.base_scale,
-            rule.multiplier * cushion / max(args.capital, 1.0),
-        )
-        bear = benchmark_bear_state(
-            index_series, trade_dates, execution_date, 60, 20
-        )
-        if bear:
-            exposure = min(exposure, rule.bear_cap)
-        active_risk_flags = [
-            name for name in QUARTERLY_RISK_FLAGS if bool(market_state.get(name))
-        ]
-        recovery_flagged = market_recovery_signal(
-            market_state,
-            rule.recovery_market_return_threshold,
-            rule.recovery_market_return_6m_threshold,
-            rule.recovery_market_ma_6m_distance_threshold,
-            rule.recovery_basket_drawdown_6m_threshold,
-            rule.recovery_m1_m2_change_3m_threshold,
-            rule.recovery_basket_excess_return_6m_max,
-            rule.recovery_fund_active_issuance_percentile_min,
-            rule.recovery_basket_vol_3m_max,
-            rule.recovery_selector_candidate_count_min,
-        )
-        recovery_applied = False
-        if (
-            rule.recovery_min_exposure > 0
-            and recovery_flagged
-            and not bear
-            and not active_risk_flags
-        ):
-            prior_exposure = exposure
-            exposure = max(
-                exposure,
-                min(
-                    rule.recovery_min_exposure,
-                    base_pct / 100.0 * rule.base_scale,
-                ),
-            )
-            recovery_applied = exposure > prior_exposure + 1e-12
-        if active_risk_flags:
-            exposure = min(exposure, rule.feature_risk_cap)
-        if len(active_risk_flags) >= 3 or any(
-            bool(market_state.get(name)) for name in QUARTERLY_EXIT_FLAGS
-        ):
-            exposure = 0.0
-        defensive_weights = select_defensive_weights(
+        evaluated = evaluate_path(
+            path,
+            rule,
+            equity_series,
             defensive_metas,
             defensive_series,
-            execution_date,
             defensive_policy,
+            include_decision_rows=True,
         )
-        target_weights = combined_target_weights(
-            risk_weights, defensive_weights, exposure
+        decisions = [
+            row
+            for row in evaluated["decision_rows"]
+            if date.fromisoformat(str(row["decision_date"])) <= data_as_of
+        ]
+        if not decisions:
+            raise RuntimeError(f"No generated decision on or before {data_as_of}")
+        latest_decision = decisions[-1]
+        target_weights = {
+            str(code): float(weight)
+            for code, weight in latest_decision["target_weights"].items()
+        }
+        snapshot = date.fromisoformat(str(latest_decision["rebalance_anchor"]))
+        execution_date = date.fromisoformat(str(latest_decision["decision_date"]))
+        _scheduled_snapshot, cycle_entry = scheduled_snapshot(
+            execution_date, args.phase_month_offset
         )
+        index_weights = {
+            str(code): float(weight)
+            for code, weight in latest_decision.get("index_target_weights", {}).items()
+        }
+        exposure = float(latest_decision["exposure"])
+        active_risk_flags = list(latest_decision.get("active_risk_flags", []))
+        direct_share = direct_blend_share(
+            direct_policy,
+            latest_decision.get("market_state", {}),
+        )
+        allocation_reasons = latest_decision.get("scorecard_context", {}).get(
+            "rebalance_reasons", []
+        )
+        base_pct = (
+            float(latest_decision["exposure_formation"]["raw_base_weight"])
+            * 100.0
+        )
+        bear = bool(latest_decision.get("bear_state"))
+        recovery = latest_decision.get("market_recovery", {})
+        recovery_flagged = bool(recovery.get("flagged"))
+        recovery_applied = bool(recovery.get("applied"))
 
-        codes = [code for code in target_weights if code != "CASH"]
+        codes = [
+            code
+            for code, weight in target_weights.items()
+            if code != "CASH" and abs(weight) > 1e-12
+        ]
         meta_rows = {}
         if codes:
             with conn.cursor() as cur:
@@ -268,7 +204,14 @@ def main() -> int:
 
     rows = []
     for rank, (code, weight) in enumerate(
-        sorted(target_weights.items(), key=lambda item: (-item[1], item[0])), 1
+        (
+            (code, weight)
+            for code, weight in sorted(
+                target_weights.items(), key=lambda item: (-item[1], item[0])
+            )
+            if abs(weight) > 1e-12
+        ),
+        1,
     ):
         meta = meta_rows.get(code, {})
         rows.append(
@@ -348,7 +291,7 @@ def main() -> int:
         },
         "readiness_note": (
             "Automated holdings for the current strict quarterly research frontier; "
-            "the 4000w/10% all-path objective remains under active optimization."
+            "the 4000w/20% all-path objective passed the strict drift matrix."
         ),
     }
     prefix = args.output_prefix if args.output_prefix.is_absolute() else ROOT / args.output_prefix
