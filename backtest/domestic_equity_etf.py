@@ -24,6 +24,7 @@ from backtest.passive_etf_supervised_selector import (
     CONSTITUENT_V4_DATASET,
     SHARE_V5_DATASET,
     SUPERVISED_ETF_POLICIES,
+    current_candidate_observations,
     load_candidate_observations,
     policy_by_name as supervised_policy_by_name,
     select_static_stable_combo,
@@ -38,6 +39,23 @@ from backtest.passive_etf_supervised_selector import (
     select_weighted_stable_combo_v7_top1,
     select_weighted_stable_combo_v9_top1,
     select_weighted_stable_combo_v10_top1,
+    select_weighted_structural_mainline_top3,
+    select_weighted_structural_mainline_top5,
+    select_weighted_structural_liquidity_flow_top5,
+    select_weighted_structural_momentum_breadth_top3,
+    select_weighted_structural_resilience_top5,
+    structural_healthcare_leadership_active,
+    structural_digital_blowoff_rotation_active,
+    structural_finance_defensive_rotation_active,
+    structural_finance_catchup_active,
+    structural_finance_substyle_for_text,
+    structural_resource_bank_catchup_style_for_text,
+    structural_local_mainline_pullback_reentry_active,
+    structural_local_mainline_pullback_reentry_candidate,
+    structural_local_mainline_pullback_reentry_subthemes,
+    structural_new_energy_pullback_restart_active,
+    structural_subtheme_group_for_text,
+    structural_theme_group_for_text,
     weighted_stable_combo_v2_scores,
     weighted_stable_combo_v3_scores,
     weighted_stable_combo_v4_scores,
@@ -46,6 +64,27 @@ from backtest.passive_etf_supervised_selector import (
     weighted_stable_combo_v7_scores,
     weighted_stable_combo_v9_scores,
     weighted_stable_combo_v10_scores,
+    weighted_structural_mainline_scores,
+    weighted_structural_conditional_rotation_scores,
+    weighted_structural_cooling_rotation_scores,
+    weighted_structural_liquidity_group_breadth_scores,
+    weighted_structural_liquidity_flow_scores,
+    weighted_structural_late_cycle_defensive_rotation_scores,
+    weighted_structural_finance_defensive_rotation_scores,
+    weighted_structural_finance_catchup_scores,
+    weighted_structural_finance_bank_catchup_scores,
+    weighted_structural_finance_resource_catchup_scores,
+    weighted_structural_resource_bank_catchup_scores,
+    weighted_structural_late_cycle_small_growth_recovery_scores,
+    weighted_structural_late_cycle_tech_pullback_continuation_scores,
+    weighted_structural_local_mainline_pullback_reentry_scores,
+    weighted_structural_new_energy_pullback_restart_scores,
+    weighted_structural_late_cycle_policy_catalyst_scores,
+    weighted_structural_momentum_breadth_scores,
+    weighted_structural_multistate_rotation_scores,
+    weighted_structural_reflation_rotation_scores,
+    weighted_structural_value_reflation_mainline_scores,
+    weighted_structural_resilience_scores,
     select_supervised_etfs,
 )
 
@@ -351,6 +390,371 @@ DIRECT_ETF_POLICIES = (
         0.0, 0.0, 0.0, True, 0.49, 0.92,
     ),
     DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_repair_top5_s05_regime_w49_s92",
+        5, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_repair_top5_s10_regime_w49_s92",
+        5, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_repair_top5_s15_regime_w49_s92",
+        5, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_repair_top5_s20_regime_w49_s92",
+        5, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_flow_repair_top5_s05_regime_w49_s92",
+        5, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_flow_repair_top10_s05_regime_w49_s92",
+        10, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_flow_repair_top10_s05_rotcond20_regime_w49_s92",
+        10, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_flow_repair_top10_s05_rotcond20_shockres50_regime_w49_s92",
+        10, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_mombreadth_repair_top3_s05_rotcond20_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_mombreadth_repair_top3_s10_rotcond35_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_mombreadth_repair_top3_s20_rotcond50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_mombreadth_repair_top3_s20_rotcond50_shockres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_mombreadth_repair_top3_s20_rotcond50_shockres50_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_mombreadth_repair_top3_s20_rotcond50_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_groupbreadth_repair_top5_s20_rotcond50_shockres100_earlyres50_regime_w49_s92",
+        5, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_reflation_repair_top3_s20_rotcond50_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_reflation_repair_top3_s10_rotcond35_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_reflation_repair_top3_s15_rotcond50_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_conditional_repair_top3_s10_rotcond35_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_conditional_repair_top3_s15_rotcond50_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_conditional_repair_top3_s10_rotcond35_hcres30_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_conditional_repair_top3_s10_rotcond35_hcres50_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_conditional_repair_top3_s10_rotcond35_hcres100_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_multistate_repair_top3_s10_rotcond35_hcres100_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_multistate_repair_top3_s10_rotcond35_hcres100_structblend70_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_multistate_repair_top3_s10_rotcond35_hcres100_structblend85_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_cooling_repair_top3_s00_rotcond100_structblend85_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_cooling_repair_top3_s00_rotcond50_structblend85_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_cooling_repair_top3_s00_rotcond50_structblend85_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_multistate_repair_top3_s10_rotcond35_hcres100_structblend85_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_repair_top3_s10_rotcond35_hcres100_structblend85_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_repair_top3_s20_rotcond50_hcres100_structblend85_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_repair_top3_s20_rotcond50_hcres100_structblend85_purestruct_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_repair_top3_s20_rotcond50_hcres100_structblend85_purestructcond_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_repair_top3_s20_rotcond50_hcres100_structblend85_purestructcond_coldstart_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_sgrowth_repair_top3_s20_rotcond50_hcres100_structblend85_purestructcond_coldstart_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_techpullback_repair_top3_s20_rotcond50_hcres100_structblend85_purestructcond_coldstart_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_techpullback_repair_top3_s20_rotcond50_hcres100_hcblend85_structblend85_purestructcond_coldstart_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_techpullback_repair_top3_s20_rotcond50_hcres100_hcblend85_neres100_neblend85_structblend85_purestructcond_coldstart_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_techpullback_repair_top3_s20_rotcond50_hcres100_hcblend85_neres100_neblend85_drotblend85_structblend85_purestructcond_coldstart_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_techpullback_repair_top3_s20_rotcond50_hcres100_hcblend85_neres100_neblend85_drotres100_drotblend85_structblend85_purestructcond_coldstart_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_techpullback_repair_top3_s20_rotcond50_hcres100_hcblend85_neres100_neblend85_drotres100_drotblend85_valres100_valblend85_structblend85_purestructcond_coldstart_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_techpullback_repair_top3_s20_rotcond50_hcres100_hcblend85_neres100_neblend85_drotres100_drotblend85_valres70_valblend70_structblend85_purestructcond_coldstart_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_techpullback_repair_top3_s20_rotcond50_hcres100_hcblend85_neres100_neblend85_drotres100_drotblend85_fcres100_fcblend85_structblend85_purestructcond_coldstart_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_techpullback_repair_top3_s20_rotcond50_hcres100_hcblend85_neres100_neblend85_drotres100_drotblend85_fcres70_fcblend70_structblend85_purestructcond_coldstart_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_techpullback_repair_top3_s20_rotcond50_hcres100_hcblend85_neres100_neblend85_drotres100_drotblend85_fcbankres100_fcbankblend85_structblend85_purestructcond_coldstart_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_techpullback_repair_top3_s20_rotcond50_hcres100_hcblend85_neres100_neblend85_drotres100_drotblend85_fcbankres100_fcbankblend50_structblend85_purestructcond_coldstart_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_techpullback_repair_top3_s20_rotcond50_hcres100_hcblend85_neres100_neblend85_drotres100_drotblend85_finres100_finresblend85_structblend85_purestructcond_coldstart_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_techpullback_repair_top3_s20_rotcond50_hcres100_hcblend85_neres100_neblend85_drotres100_drotblend85_rbres100_rbblend85_structblend85_purestructcond_coldstart_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_techpullback_repair_top3_s20_rotcond50_hcres100_hcblend85_lmres100_lmblend85_drotres100_drotblend85_rbres100_rbblend85_structblend85_purestructcond_coldstart_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_techpullback_repair_top3_s20_rotcond50_hcres100_hcblend85_neres100_neblend85_drotres100_drotblend85_findefres100_structblend85_purestructcond_coldstart_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_techpullback_repair_top5_s20_rotcond50_hcres100_hcblend85_neres100_neblend85_drotres100_drotblend85_structblend85_purestructcond_coldstart_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_policycat_repair_top3_s20_rotcond50_hcres100_structblend85_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_policycat_repair_top3_s20_rotcond50_hcres100_structblend85_purestructcond_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_repair_top3_s10_rotcond35_hcres100_structblend90_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_latecycle_repair_top3_s10_rotcond35_hcres100_structblend100_exhaustfallback_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_multistate_repair_top3_s10_rotcond35_hcres100_structblend100_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_multistate_repair_top3_s15_rotcond50_hcres100_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_multistate_repair_top3_s20_rotcond50_hcres100_shockres100_earlyres50_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_resilience_repair_top5_s20_shockcond50_regime_w49_s92",
+        5, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_flow_repair_top10_s05_rotcond35_regime_w49_s92",
+        10, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_flow_repair_top10_s05_rotcond50_regime_w49_s92",
+        10, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_flow_repair_top10_s05_rotcond15_regime_w49_s92",
+        10, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_flow_repair_top10_s05_rotcond10_regime_w49_s92",
+        10, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_flow_repair_top10_s05_earlyrotcond50_regime_w49_s92",
+        10, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_flow_repair_top10_s05_earlyrotcond30_regime_w49_s92",
+        10, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_flow_repair_top10_s05_earlyrotcond20_regime_w49_s92",
+        10, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_flow_repair_top10_s05_earlyrotcond10_regime_w49_s92",
+        10, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_flow_repair_top10_s05_earlyrotcond100_regime_w49_s92",
+        10, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_flow_repair_top5_s05_cond20_regime_w49_s92",
+        5, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_flow_repair_top5_s05_cond35_regime_w49_s92",
+        5, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_flow_repair_top5_s05_widecond20_regime_w49_s92",
+        5, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_weighted_stable_v9_structural_flow_repair_top5_s05_widecond35_regime_w49_s92",
+        5, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
         "blend_index_weighted_stable_v10_b050_v500_roe100_top1_regime_w49_s92",
         1, 0.0, 0.0, 0.0, 0.0, 1.0,
         0.0, 0.0, 0.0, True, 0.49, 0.92,
@@ -359,6 +763,41 @@ DIRECT_ETF_POLICIES = (
         "blend_index_weighted_stable_v10_b050_v500_roe075_top1_regime_w49_s92",
         1, 0.0, 0.0, 0.0, 0.0, 1.0,
         0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "direct_structural_mainline_top3",
+        3, 0.0, 0.0, 0.0, 0.0, 2.0,
+        0.0, 0.0, 0.0, True,
+    ),
+    DirectEtfSelectorPolicy(
+        "direct_structural_mainline_top5",
+        5, 0.0, 0.0, 0.0, 0.0, 2.0,
+        0.0, 0.0, 0.0, True,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_structural_mainline_top3_regime_w49_s92",
+        3, 0.0, 0.0, 0.0, 0.0, 2.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_structural_mainline_top5_regime_w49_s92",
+        5, 0.0, 0.0, 0.0, 0.0, 2.0,
+        0.0, 0.0, 0.0, True, 0.49, 0.92,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_structural_mainline_top5_w10",
+        5, 0.0, 0.0, 0.0, 0.0, 2.0,
+        0.0, 0.0, 0.0, True, 0.10,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_structural_mainline_top5_w20",
+        5, 0.0, 0.0, 0.0, 0.0, 2.0,
+        0.0, 0.0, 0.0, True, 0.20,
+    ),
+    DirectEtfSelectorPolicy(
+        "blend_index_structural_mainline_top5_cond_w10",
+        5, 0.0, 0.0, 0.0, 0.0, 2.0,
+        0.0, 0.0, 0.0, True, 0.10,
     ),
     *(
         DirectEtfSelectorPolicy(
@@ -404,6 +843,13 @@ _DIRECT_DIAGNOSTICS_CACHE: dict[
     tuple[int, int, str, date], dict[str, float]
 ] = {}
 _INDEX_MAPPING_CACHE: dict[tuple[object, ...], dict[str, float]] = {}
+_STRUCTURAL_THEME_GROUPS_CACHE: dict[int, dict[str, str]] = {}
+_STRUCTURAL_SUBTHEME_GROUPS_CACHE: dict[int, dict[str, str]] = {}
+_STRUCTURAL_FINANCE_SUBSTYLE_CACHE: dict[int, dict[str, str]] = {}
+_STRUCTURAL_RESOURCE_BANK_STYLE_CACHE: dict[int, dict[str, str]] = {}
+_STRUCTURAL_PRICE_COLD_START_CACHE: dict[
+    tuple[int, int, date, frozenset[str]], dict[str, float]
+] = {}
 
 SELECTED_ETF_DIAGNOSTIC_FIELDS = {
     "momentum_1m": "selected_etf_momentum_1m",
@@ -494,7 +940,22 @@ def direct_selector_diagnostics(
     cached = _DIRECT_DIAGNOSTICS_CACHE.get(cache_key)
     if cached is not None:
         return dict(cached)
-    if "weighted_stable_v10_b050_v500" in policy.name:
+    if (
+        "weighted_stable_v9_structural_repair" in policy.name
+        or "weighted_stable_v9_structural_flow_repair" in policy.name
+        or "weighted_stable_v9_structural_mombreadth_repair" in policy.name
+        or "weighted_stable_v9_structural_groupbreadth_repair" in policy.name
+        or "weighted_stable_v9_structural_reflation_repair" in policy.name
+        or "weighted_stable_v9_structural_conditional_repair" in policy.name
+        or "weighted_stable_v9_structural_multistate_repair" in policy.name
+        or "weighted_stable_v9_structural_latecycle_repair" in policy.name
+        or "weighted_stable_v9_structural_policycat_repair" in policy.name
+        or "weighted_stable_v9_structural_cooling_repair" in policy.name
+        or "weighted_stable_v9_structural_resilience_repair" in policy.name
+    ):
+        observations = load_candidate_observations(CONSTITUENT_V4_DATASET)
+        scores = weighted_stable_combo_v9_scores(observations, snapshot)
+    elif "weighted_stable_v10_b050_v500" in policy.name:
         observations = load_candidate_observations(CONSTITUENT_V4_DATASET)
         roe_weight = 0.75 if "roe075" in policy.name else 1.0
         scores = weighted_stable_combo_v10_scores(
@@ -503,6 +964,9 @@ def direct_selector_diagnostics(
     elif "weighted_stable_v9_roe050" in policy.name:
         observations = load_candidate_observations(CONSTITUENT_V4_DATASET)
         scores = weighted_stable_combo_v9_scores(observations, snapshot)
+    elif "structural_mainline" in policy.name:
+        observations = load_candidate_observations(SHARE_V5_DATASET)
+        scores = weighted_structural_mainline_scores(observations, snapshot)
     elif "weighted_stable_v7_flow" in policy.name:
         observations = load_candidate_observations(SHARE_V5_DATASET)
         flow_weight = 0.10 if "flow010" in policy.name else 0.50
@@ -546,11 +1010,1488 @@ def _percentile(values: dict[str, float], *, higher_is_better: bool = True) -> d
     return ranks if higher_is_better else {code: 1.0 - rank for code, rank in ranks.items()}
 
 
+def _finite_row_float(row: dict[str, object], key: str, default: float) -> float:
+    raw = row.get(key)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return default
+    return value if math.isfinite(value) else default
+
+
+def structural_theme_groups_from_metas(
+    metas_by_index: dict[str, list[EquityEtfMeta]],
+) -> dict[str, str]:
+    cache_key = id(metas_by_index)
+    cached = _STRUCTURAL_THEME_GROUPS_CACHE.get(cache_key)
+    if cached is not None:
+        return dict(cached)
+    output = {
+        meta.code: structural_theme_group_for_text(f"{meta.name} {meta.index_name}")
+        for values in metas_by_index.values()
+        for meta in values
+    }
+    _STRUCTURAL_THEME_GROUPS_CACHE[cache_key] = dict(output)
+    return output
+
+
+def structural_subtheme_groups_from_metas(
+    metas_by_index: dict[str, list[EquityEtfMeta]],
+) -> dict[str, str]:
+    cache_key = id(metas_by_index)
+    cached = _STRUCTURAL_SUBTHEME_GROUPS_CACHE.get(cache_key)
+    if cached is not None:
+        return dict(cached)
+    output = {
+        meta.code: structural_subtheme_group_for_text(f"{meta.name} {meta.index_name}")
+        for values in metas_by_index.values()
+        for meta in values
+    }
+    _STRUCTURAL_SUBTHEME_GROUPS_CACHE[cache_key] = dict(output)
+    return output
+
+
+def structural_finance_substyles_from_metas(
+    metas_by_index: dict[str, list[EquityEtfMeta]],
+) -> dict[str, str]:
+    cache_key = id(metas_by_index)
+    cached = _STRUCTURAL_FINANCE_SUBSTYLE_CACHE.get(cache_key)
+    if cached is not None:
+        return dict(cached)
+    output = {
+        meta.code: structural_finance_substyle_for_text(
+            f"{meta.name} {meta.index_name}"
+        )
+        for values in metas_by_index.values()
+        for meta in values
+    }
+    _STRUCTURAL_FINANCE_SUBSTYLE_CACHE[cache_key] = dict(output)
+    return output
+
+
+def structural_resource_bank_catchup_styles_from_metas(
+    metas_by_index: dict[str, list[EquityEtfMeta]],
+) -> dict[str, str]:
+    cache_key = id(metas_by_index)
+    cached = _STRUCTURAL_RESOURCE_BANK_STYLE_CACHE.get(cache_key)
+    if cached is not None:
+        return dict(cached)
+    output = {
+        meta.code: structural_resource_bank_catchup_style_for_text(
+            f"{meta.name} {meta.index_name}"
+        )
+        for values in metas_by_index.values()
+        for meta in values
+    }
+    _STRUCTURAL_RESOURCE_BANK_STYLE_CACHE[cache_key] = dict(output)
+    return output
+
+
+def crowded_growth_exhaustion_fallback_active(
+    observations: list[dict[str, object]],
+    snapshot: date,
+    groups_by_code: dict[str, str],
+    market_state: dict[str, object] | None,
+) -> bool:
+    """Point-in-time trigger for broad-growth exhaustion with narrow local strength."""
+
+    if not crowded_growth_exhaustion_market_setup_active(market_state):
+        return False
+    for row in observations:
+        if date.fromisoformat(str(row["snapshot"])) != snapshot:
+            continue
+        code = str(row["ts_code"])
+        if groups_by_code.get(code) != "broad_growth":
+            continue
+        if (
+            _finite_row_float(row, "momentum_3m", -1.0) >= 0.15
+            and _finite_row_float(row, "amount_crowding_percentile_3y", 0.0) >= 0.85
+            and _finite_row_float(row, "maximum_daily_loss_3m", 0.0) <= -0.075
+        ):
+            return True
+    return False
+
+
+def crowded_growth_exhaustion_market_setup_active(
+    market_state: dict[str, object] | None,
+) -> bool:
+    if not market_state:
+        return False
+    required = (
+        "cs300_return_3m",
+        "basket_return_3m_max",
+        "breadth_return_3m_positive",
+        "basket_drawdown_6m",
+        "selector_score_margin",
+    )
+    if any(market_state.get(name) is None for name in required):
+        return False
+    strong_crisis = bool(
+        market_state.get("crisis_continuation_flag")
+        or market_state.get("domestic_liquidity_stress_flag")
+        or market_state.get("credit_contraction_tightening_flag")
+    )
+    if strong_crisis:
+        return False
+    return (
+        float(market_state["cs300_return_3m"]) < 0.0
+        and float(market_state["basket_return_3m_max"]) >= 0.10
+        and 0.20 <= float(market_state["breadth_return_3m_positive"]) <= 0.60
+        and float(market_state["basket_drawdown_6m"]) > -0.16
+        and float(market_state["selector_score_margin"]) >= 0.03
+    )
+
+
+def _series_return_to_snapshot(
+    rows: list[tuple[date, float]],
+    snapshot: date,
+    observations: int,
+) -> float | None:
+    end = bisect_right(rows, (snapshot, math.inf))
+    if end <= observations:
+        return None
+    if (snapshot - rows[end - 1][0]).days > MAX_ETF_PRICE_STALENESS_DAYS:
+        return None
+    start = rows[end - observations - 1][1]
+    finish = rows[end - 1][1]
+    return finish / start - 1.0 if start > 0 else None
+
+
+def _series_volatility_to_snapshot(
+    rows: list[tuple[date, float]],
+    snapshot: date,
+    observations: int,
+) -> float | None:
+    end = bisect_right(rows, (snapshot, math.inf))
+    if end <= observations:
+        return None
+    window = rows[end - observations - 1 : end]
+    daily_returns = [
+        current[1] / previous[1] - 1.0
+        for previous, current in zip(window[:-1], window[1:])
+        if previous[1] > 0
+    ]
+    if len(daily_returns) < 20:
+        return None
+    return statistics.pstdev(daily_returns) * math.sqrt(252.0)
+
+
+def _series_drawdown_to_snapshot(
+    rows: list[tuple[date, float]],
+    snapshot: date,
+    observations: int,
+) -> float | None:
+    end = bisect_right(rows, (snapshot, math.inf))
+    if end < observations:
+        return None
+    prices = [value for _day, value in rows[end - observations : end]]
+    high = max(prices) if prices else 0.0
+    return prices[-1] / high - 1.0 if high > 0 else None
+
+
+def price_value_exhaustion_fallback_weights(
+    metas_by_index: dict[str, list[EquityEtfMeta]],
+    series: dict[str, list[tuple[date, float]]],
+    snapshot: date,
+    *,
+    top_n: int = 3,
+) -> dict[str, float]:
+    """Select low-volatility domestic value proxies from ETF prices only."""
+
+    groups_by_code = structural_theme_groups_from_metas(metas_by_index)
+    metas = {meta.code: meta for values in metas_by_index.values() for meta in values}
+    metrics: dict[str, dict[str, float]] = {}
+    for code, meta in metas.items():
+        if groups_by_code.get(code) not in {"broad_value", "finance", "industrial"}:
+            continue
+        if meta.list_date > snapshot or meta.first_trade_date > snapshot:
+            continue
+        if not has_recent_etf_price(series, code, snapshot):
+            continue
+        category = classify_defensive_etf(code, meta.name, meta.index_name)
+        if category in {"bond", "gold"}:
+            continue
+        rows = series.get(code) or []
+        m1 = _series_return_to_snapshot(rows, snapshot, 21)
+        m3 = _series_return_to_snapshot(rows, snapshot, 63)
+        m6 = _series_return_to_snapshot(rows, snapshot, 126)
+        vol = _series_volatility_to_snapshot(rows, snapshot, 63)
+        drawdown = _series_drawdown_to_snapshot(rows, snapshot, 63)
+        if None in (m1, m3, m6, vol, drawdown):
+            continue
+        metrics[code] = {
+            "m1": float(m1),
+            "m3": float(m3),
+            "m6": float(m6),
+            "vol": float(vol),
+            "drawdown": float(drawdown),
+        }
+    if not metrics:
+        return {}
+    ranks = {
+        "m1": _percentile({code: item["m1"] for code, item in metrics.items()}, higher_is_better=False),
+        "m3": _percentile({code: item["m3"] for code, item in metrics.items()}, higher_is_better=False),
+        "m6": _percentile({code: item["m6"] for code, item in metrics.items()}),
+        "vol": _percentile({code: item["vol"] for code, item in metrics.items()}, higher_is_better=False),
+        "drawdown": _percentile({code: item["drawdown"] for code, item in metrics.items()}),
+    }
+    scores = {}
+    for code in metrics:
+        group_bonus = {
+            "broad_value": 0.20,
+            "finance": 0.08,
+            "industrial": 0.04,
+        }.get(groups_by_code.get(code), 0.0)
+        scores[code] = (
+            0.22 * ranks["m1"][code]
+            + 0.18 * ranks["m3"][code]
+            + 0.10 * ranks["m6"][code]
+            + 0.28 * ranks["vol"][code]
+            + 0.22 * ranks["drawdown"][code]
+            + group_bonus
+        )
+    selected = sorted(
+        scores,
+        key=lambda code: (round(scores[code], 12), code),
+        reverse=True,
+    )[:top_n]
+    powered = {code: max(scores[code], 0.01) ** 2.0 for code in selected}
+    total = sum(powered.values())
+    return {code: value / total for code, value in powered.items()} if total > 0 else {}
+
+
+def structural_price_cold_start_scores(
+    metas_by_index: dict[str, list[EquityEtfMeta]],
+    series: dict[str, list[tuple[date, float]]],
+    snapshot: date,
+    *,
+    excluded_codes: set[str] | None = None,
+    extra_allowed_subthemes: set[str] | None = None,
+    allow_nonpositive_1m_subthemes: set[str] | None = None,
+) -> dict[str, float]:
+    """Price-only structural candidates for ETFs missing SHARE_V5 feature rows."""
+
+    excluded_codes = excluded_codes or set()
+    extra_allowed_subthemes = extra_allowed_subthemes or set()
+    allow_nonpositive_1m_subthemes = allow_nonpositive_1m_subthemes or set()
+    cache_key = (
+        id(metas_by_index),
+        id(series),
+        snapshot,
+        frozenset(excluded_codes),
+        frozenset(extra_allowed_subthemes),
+        frozenset(allow_nonpositive_1m_subthemes),
+    )
+    cached = _STRUCTURAL_PRICE_COLD_START_CACHE.get(cache_key)
+    if cached is not None:
+        return dict(cached)
+    metas = {meta.code: meta for values in metas_by_index.values() for meta in values}
+    groups_by_code = structural_theme_groups_from_metas(metas_by_index)
+    subthemes_by_code = structural_subtheme_groups_from_metas(metas_by_index)
+    allowed_groups = {
+        "growth",
+        "technology",
+        "consumer",
+        "industrial",
+        "healthcare",
+        "broad_growth",
+    }
+    preferred_subthemes = {
+        "digital_hot",
+        "semiconductor",
+        "new_energy",
+        "high_end_equipment",
+        "healthcare",
+    }
+    metrics: dict[str, dict[str, float]] = {}
+    for code, meta in metas.items():
+        if code in excluded_codes:
+            continue
+        if meta.list_date > snapshot or meta.first_trade_date > snapshot:
+            continue
+        if classify_defensive_etf(code, meta.name, meta.index_name) is not None:
+            continue
+        if not has_recent_etf_price(series, code, snapshot):
+            continue
+        group = groups_by_code.get(code, "")
+        subtheme = subthemes_by_code.get(code, "")
+        if (
+            group not in allowed_groups
+            and subtheme not in preferred_subthemes
+            and subtheme not in extra_allowed_subthemes
+        ):
+            continue
+        rows = series.get(code) or []
+        momentum_1m = _series_return_to_snapshot(rows, snapshot, 21)
+        momentum_3m = _series_return_to_snapshot(rows, snapshot, 63)
+        momentum_6m = _series_return_to_snapshot(rows, snapshot, 126)
+        if momentum_1m is None:
+            continue
+        if momentum_1m <= 0.0 and not (
+            subtheme in allow_nonpositive_1m_subthemes
+            and (
+                (momentum_3m is not None and momentum_3m > 0.0)
+                or (momentum_6m is not None and momentum_6m > 0.0)
+            )
+        ):
+            continue
+        drawdown_3m = _series_drawdown_to_snapshot(rows, snapshot, 63)
+        drawdown_6m = _series_drawdown_to_snapshot(rows, snapshot, 126)
+        volatility_3m = _series_volatility_to_snapshot(rows, snapshot, 63)
+        if drawdown_3m is not None and drawdown_3m < -0.18:
+            continue
+        if volatility_3m is not None and volatility_3m > 0.55:
+            continue
+        if (
+            momentum_6m is not None
+            and drawdown_6m is not None
+            and volatility_3m is not None
+            and momentum_6m > 0.40
+            and drawdown_6m > -0.06
+            and volatility_3m > 0.25
+        ):
+            continue
+        if _cold_start_overheated_theme_blocked(
+            subtheme,
+            momentum_1m,
+            momentum_3m,
+            momentum_6m,
+            drawdown_3m,
+            drawdown_6m,
+            volatility_3m,
+        ):
+            continue
+        metrics[code] = {
+            "momentum_1m": float(momentum_1m),
+            "momentum_3m": float(momentum_3m) if momentum_3m is not None else 0.0,
+            "momentum_6m": float(momentum_6m) if momentum_6m is not None else 0.0,
+            "drawdown": float(
+                drawdown_6m if drawdown_6m is not None else drawdown_3m or 0.0
+            ),
+            "volatility": float(volatility_3m) if volatility_3m is not None else 0.30,
+            "subtheme_bonus": (
+                0.08
+                if subtheme in preferred_subthemes
+                or subtheme in extra_allowed_subthemes
+                else 0.0
+            ),
+        }
+    if not metrics:
+        _STRUCTURAL_PRICE_COLD_START_CACHE[cache_key] = {}
+        return {}
+    ranks = {
+        "momentum_1m": _percentile(
+            {code: item["momentum_1m"] for code, item in metrics.items()}
+        ),
+        "momentum_3m": _percentile(
+            {code: item["momentum_3m"] for code, item in metrics.items()}
+        ),
+        "momentum_6m": _percentile(
+            {code: item["momentum_6m"] for code, item in metrics.items()}
+        ),
+        "drawdown": _percentile(
+            {code: item["drawdown"] for code, item in metrics.items()}
+        ),
+        "volatility": _percentile(
+            {code: item["volatility"] for code, item in metrics.items()},
+            higher_is_better=False,
+        ),
+    }
+    output = {
+        code: (
+            0.42 * ranks["momentum_1m"][code]
+            + 0.22 * ranks["momentum_3m"][code]
+            + 0.12 * ranks["momentum_6m"][code]
+            + 0.12 * ranks["drawdown"][code]
+            + 0.12 * ranks["volatility"][code]
+            + metrics[code]["subtheme_bonus"]
+        )
+        for code in metrics
+    }
+    _STRUCTURAL_PRICE_COLD_START_CACHE[cache_key] = dict(output)
+    return output
+
+
+def _cold_start_overheated_theme_blocked(
+    subtheme: str,
+    momentum_1m: float | None,
+    momentum_3m: float | None,
+    momentum_6m: float | None,
+    drawdown_3m: float | None,
+    drawdown_6m: float | None,
+    volatility_3m: float | None,
+) -> bool:
+    if subtheme not in {"digital_hot", "semiconductor"}:
+        return False
+
+    shallow_drawdown_3m = drawdown_3m is None or drawdown_3m > -0.015
+    shallow_drawdown_6m = drawdown_6m is None or drawdown_6m > -0.04
+    high_volatility = volatility_3m is not None and volatility_3m > 0.24
+    short_history = momentum_6m is None
+
+    high_short_momentum = (
+        momentum_1m is not None
+        and momentum_1m >= 0.12
+        and momentum_3m is not None
+        and momentum_3m >= 0.24
+        and shallow_drawdown_3m
+        and high_volatility
+    )
+    short_history_extension = (
+        short_history
+        and momentum_1m is not None
+        and momentum_1m >= 0.10
+        and (momentum_3m is None or momentum_3m >= 0.12)
+        and shallow_drawdown_3m
+        and (volatility_3m is None or volatility_3m > 0.20)
+    )
+    medium_term_extension = (
+        momentum_3m is not None
+        and momentum_3m >= 0.28
+        and (momentum_6m is None or momentum_6m >= 0.28)
+        and shallow_drawdown_6m
+        and high_volatility
+    )
+    return high_short_momentum or short_history_extension or medium_term_extension
+
+
+def v9_structural_repair_weights(
+    snapshot: date,
+    repair_share: float,
+    *,
+    repair_score: str = "mainline",
+    repair_top_n: int = 5,
+    groups_by_code: dict[str, str] | None = None,
+    subthemes_by_code: dict[str, str] | None = None,
+    finance_substyles_by_code: dict[str, str] | None = None,
+    resource_bank_styles_by_code: dict[str, str] | None = None,
+    pure_structural: bool = False,
+    cold_start_scores: dict[str, float] | None = None,
+) -> dict[str, float]:
+    """Mostly keep the V9 direct sleeve, with a small filtered mainline repair."""
+
+    base_scores = weighted_stable_combo_v9_scores(
+        load_candidate_observations(CONSTITUENT_V4_DATASET),
+        snapshot,
+    )
+    if not base_scores:
+        return {}
+    base_code = max(base_scores, key=lambda code: (round(base_scores[code], 12), code))
+    share_rows = current_candidate_observations(SHARE_V5_DATASET, snapshot)
+    if repair_score == "liquidity_flow":
+        structural_scores = weighted_structural_liquidity_flow_scores(
+            share_rows,
+            snapshot,
+        )
+    elif repair_score == "momentum_breadth":
+        structural_scores = weighted_structural_momentum_breadth_scores(
+            share_rows,
+            snapshot,
+        )
+    elif repair_score == "liquidity_group_breadth":
+        structural_scores = weighted_structural_liquidity_group_breadth_scores(
+            share_rows,
+            snapshot,
+            groups_by_code or {},
+        )
+    elif repair_score == "reflation_rotation":
+        structural_scores = weighted_structural_reflation_rotation_scores(
+            share_rows,
+            snapshot,
+        )
+    elif repair_score == "value_reflation_mainline":
+        structural_scores = weighted_structural_value_reflation_mainline_scores(
+            share_rows,
+            snapshot,
+            groups_by_code or {},
+            subthemes_by_code or {},
+        )
+    elif repair_score == "conditional_rotation":
+        structural_scores = weighted_structural_conditional_rotation_scores(
+            share_rows,
+            snapshot,
+            groups_by_code or {},
+        )
+    elif repair_score == "multistate_rotation":
+        structural_scores = weighted_structural_multistate_rotation_scores(
+            share_rows,
+            snapshot,
+            groups_by_code or {},
+            subthemes_by_code or {},
+        )
+    elif repair_score == "late_cycle_defensive_rotation":
+        structural_scores = weighted_structural_late_cycle_defensive_rotation_scores(
+            share_rows,
+            snapshot,
+            groups_by_code or {},
+            subthemes_by_code or {},
+        )
+    elif repair_score == "finance_defensive_rotation":
+        structural_scores = weighted_structural_finance_defensive_rotation_scores(
+            share_rows,
+            snapshot,
+            groups_by_code or {},
+            subthemes_by_code or {},
+        )
+    elif repair_score == "finance_catchup":
+        structural_scores = weighted_structural_finance_catchup_scores(
+            share_rows,
+            snapshot,
+            subthemes_by_code or {},
+        )
+    elif repair_score == "finance_bank_catchup":
+        structural_scores = weighted_structural_finance_bank_catchup_scores(
+            share_rows,
+            snapshot,
+            subthemes_by_code or {},
+            finance_substyles_by_code or {},
+        )
+    elif repair_score == "finance_resource_catchup":
+        structural_scores = weighted_structural_finance_resource_catchup_scores(
+            share_rows,
+            snapshot,
+            subthemes_by_code or {},
+            finance_substyles_by_code or {},
+        )
+    elif repair_score == "resource_bank_catchup":
+        structural_scores = weighted_structural_resource_bank_catchup_scores(
+            share_rows,
+            snapshot,
+            resource_bank_styles_by_code or {},
+        )
+    elif repair_score == "late_cycle_small_growth_recovery":
+        structural_scores = weighted_structural_late_cycle_small_growth_recovery_scores(
+            share_rows,
+            snapshot,
+            groups_by_code or {},
+            subthemes_by_code or {},
+        )
+    elif repair_score == "late_cycle_tech_pullback_continuation":
+        structural_scores = weighted_structural_late_cycle_tech_pullback_continuation_scores(
+            share_rows,
+            snapshot,
+            groups_by_code or {},
+            subthemes_by_code or {},
+        )
+    elif repair_score == "new_energy_pullback_restart":
+        structural_scores = weighted_structural_new_energy_pullback_restart_scores(
+            share_rows,
+            snapshot,
+            groups_by_code or {},
+            subthemes_by_code or {},
+        )
+    elif repair_score == "local_mainline_pullback_reentry":
+        structural_scores = weighted_structural_local_mainline_pullback_reentry_scores(
+            share_rows,
+            snapshot,
+            groups_by_code or {},
+            subthemes_by_code or {},
+        )
+    elif repair_score == "late_cycle_policy_catalyst_rotation":
+        structural_scores = weighted_structural_late_cycle_policy_catalyst_scores(
+            share_rows,
+            snapshot,
+            groups_by_code or {},
+            subthemes_by_code or {},
+        )
+    elif repair_score == "cooling_rotation":
+        structural_scores = weighted_structural_cooling_rotation_scores(
+            share_rows,
+            snapshot,
+            subthemes_by_code or {},
+        )
+    elif repair_score == "resilience":
+        structural_scores = weighted_structural_resilience_scores(
+            share_rows,
+            snapshot,
+        )
+    else:
+        structural_scores = weighted_structural_mainline_scores(
+            share_rows,
+            snapshot,
+        )
+    if cold_start_scores:
+        if repair_score == "resource_bank_catchup":
+            cold_start_scores = {
+                code: score
+                for code, score in cold_start_scores.items()
+                if (resource_bank_styles_by_code or {}).get(code)
+                in {"resources", "bank"}
+            }
+        structural_scores = {**structural_scores, **cold_start_scores}
+    new_energy_restart_active = (
+        repair_score == "new_energy_pullback_restart"
+        and structural_new_energy_pullback_restart_active(
+            share_rows,
+            snapshot,
+            subthemes_by_code or {},
+        )
+    )
+    local_mainline_reentry_active = (
+        repair_score
+        in {
+            "late_cycle_tech_pullback_continuation",
+            "local_mainline_pullback_reentry",
+        }
+        and structural_local_mainline_pullback_reentry_active(
+            share_rows,
+            snapshot,
+            subthemes_by_code or {},
+        )
+    )
+    use_resilience_filter = repair_score in {
+        "resilience",
+        "cooling_rotation",
+        "value_reflation_mainline",
+        "finance_catchup",
+        "finance_bank_catchup",
+        "finance_resource_catchup",
+        "resource_bank_catchup",
+        "new_energy_pullback_restart",
+        "local_mainline_pullback_reentry",
+    } or (
+        repair_score in {
+            "conditional_rotation",
+            "multistate_rotation",
+            "late_cycle_defensive_rotation",
+            "finance_defensive_rotation",
+            "late_cycle_small_growth_recovery",
+            "late_cycle_tech_pullback_continuation",
+            "late_cycle_policy_catalyst_rotation",
+        }
+        and structural_healthcare_leadership_active(
+            share_rows,
+            snapshot,
+            groups_by_code or {},
+        )
+    ) or new_energy_restart_active or local_mainline_reentry_active
+    eligible = {}
+    for row in share_rows:
+        code = str(row["ts_code"])
+        if code not in structural_scores:
+            continue
+        if use_resilience_filter:
+            drawdown_6m_floor = (
+                -0.30
+                if (
+                    local_mainline_reentry_active
+                    and structural_local_mainline_pullback_reentry_candidate(row)
+                )
+                else -0.20
+            )
+            blocked = (
+                _finite_row_float(row, "drawdown_6m", -1.0) < drawdown_6m_floor
+                or _finite_row_float(row, "maximum_daily_loss_3m", -1.0) < -0.12
+                or _finite_row_float(row, "historical_cvar_5pct_3m", -1.0) < -0.08
+                or _finite_row_float(row, "amount_crowding_percentile_3y", 0.0) > 0.995
+            )
+        else:
+            blocked = (
+                _finite_row_float(row, "drawdown_6m", -1.0) < -0.20
+                or _finite_row_float(row, "maximum_daily_loss_3m", -1.0) < -0.07
+                or _finite_row_float(row, "historical_cvar_5pct_3m", -1.0) < -0.035
+                or _finite_row_float(row, "amount_crowding_percentile_3y", 0.0) > 0.90
+            )
+        if blocked:
+            continue
+        eligible[code] = structural_scores[code]
+    if cold_start_scores:
+        for code, score in cold_start_scores.items():
+            if code not in eligible:
+                eligible[code] = score
+    repair_codes = sorted(
+        eligible,
+        key=lambda code: (round(eligible[code], 12), code),
+        reverse=True,
+    )[:repair_top_n]
+    if not repair_codes or repair_share <= 0:
+        return {base_code: 1.0}
+    repair_weights = {
+        code: max(eligible[code], 0.01) ** 2.0 for code in repair_codes
+    }
+    total_repair = sum(repair_weights.values())
+    if pure_structural and total_repair > 0:
+        return {
+            code: weight / total_repair
+            for code, weight in repair_weights.items()
+        }
+    output = {base_code: 1.0 - repair_share}
+    for code, weight in repair_weights.items():
+        output[code] = output.get(code, 0.0) + repair_share * weight / total_repair
+    total = sum(output.values())
+    return {code: weight / total for code, weight in output.items()}
+
+
+def structural_opportunity_active(market_state: dict[str, object] | None) -> bool:
+    if not market_state:
+        return False
+    required = (
+        "cs300_return_3m",
+        "basket_return_3m_dispersion",
+        "basket_return_3m_max",
+        "breadth_return_3m_positive",
+        "basket_drawdown_6m",
+    )
+    if any(market_state.get(name) is None for name in required):
+        return False
+    strong_crisis = bool(
+        market_state.get("crisis_continuation_flag")
+        or market_state.get("domestic_liquidity_stress_flag")
+        or market_state.get("credit_contraction_tightening_flag")
+    )
+    return (
+        float(market_state["cs300_return_3m"]) < 0.05
+        and float(market_state["basket_return_3m_dispersion"]) >= 0.08
+        and float(market_state["basket_return_3m_max"]) >= 0.08
+        and float(market_state["breadth_return_3m_positive"]) >= 0.50
+        and float(market_state["basket_drawdown_6m"]) > -0.20
+        and not strong_crisis
+    )
+
+
+def wide_structural_opportunity_active(market_state: dict[str, object] | None) -> bool:
+    if not market_state:
+        return False
+    required = (
+        "cs300_return_3m",
+        "basket_return_3m_dispersion",
+        "basket_return_3m_max",
+        "breadth_return_3m_positive",
+        "basket_drawdown_6m",
+    )
+    if any(market_state.get(name) is None for name in required):
+        return False
+    strong_crisis = bool(
+        market_state.get("crisis_continuation_flag")
+        or market_state.get("domestic_liquidity_stress_flag")
+        or market_state.get("credit_contraction_tightening_flag")
+    )
+    return (
+        float(market_state["cs300_return_3m"]) < 0.16
+        and float(market_state["basket_return_3m_dispersion"]) >= 0.03
+        and float(market_state["basket_return_3m_max"]) >= 0.06
+        and float(market_state["breadth_return_3m_positive"]) >= 0.50
+        and float(market_state["basket_drawdown_6m"]) > -0.12
+        and not strong_crisis
+    )
+
+
+def broad_participation_rotation_active(market_state: dict[str, object] | None) -> bool:
+    if not market_state:
+        return False
+    required = (
+        "cs300_return_3m",
+        "basket_return_3m_max",
+        "breadth_return_3m_positive",
+        "basket_drawdown_6m",
+        "selected_etf_momentum_3m",
+        "selector_score_margin",
+    )
+    if any(market_state.get(name) is None for name in required):
+        return False
+    strong_crisis = bool(
+        market_state.get("crisis_continuation_flag")
+        or market_state.get("domestic_liquidity_stress_flag")
+        or market_state.get("credit_contraction_tightening_flag")
+    )
+    return (
+        float(market_state["cs300_return_3m"]) < 0.12
+        and float(market_state["basket_return_3m_max"]) >= 0.10
+        and float(market_state["breadth_return_3m_positive"]) >= 0.80
+        and float(market_state["basket_drawdown_6m"]) > -0.05
+        and float(market_state["selected_etf_momentum_3m"]) >= 0.02
+        and float(market_state["selector_score_margin"]) >= 0.01
+        and not strong_crisis
+    )
+
+
+def rotation_structural_opportunity_active(market_state: dict[str, object] | None) -> bool:
+    return wide_structural_opportunity_active(market_state) or broad_participation_rotation_active(market_state)
+
+
+def pure_structural_rotation_active(market_state: dict[str, object] | None) -> bool:
+    """Point-in-time guard for replacing the repair sleeve with pure structure."""
+
+    if not market_state:
+        return False
+    required = (
+        "basket_return_3m_max",
+        "breadth_return_3m_positive",
+        "basket_drawdown_6m",
+        "basket_vol_3m",
+    )
+    if any(market_state.get(name) is None for name in required):
+        return False
+    strong_crisis = bool(
+        market_state.get("crisis_continuation_flag")
+        or market_state.get("domestic_liquidity_stress_flag")
+        or market_state.get("credit_contraction_tightening_flag")
+    )
+    return (
+        float(market_state["basket_return_3m_max"]) >= 0.08
+        and float(market_state["breadth_return_3m_positive"]) >= 0.50
+        and float(market_state["basket_drawdown_6m"]) > -0.08
+        and float(market_state["basket_vol_3m"]) <= 0.24
+        and not strong_crisis
+    )
+
+
+def shock_resilience_opportunity_active(market_state: dict[str, object] | None) -> bool:
+    if not market_state:
+        return False
+    required = (
+        "cs300_return_3m",
+        "basket_return_3m_dispersion",
+        "basket_return_3m_max",
+        "breadth_return_3m_positive",
+        "basket_drawdown_6m",
+    )
+    if any(market_state.get(name) is None for name in required):
+        return False
+    strong_crisis = bool(
+        market_state.get("crisis_continuation_flag")
+        or market_state.get("domestic_liquidity_stress_flag")
+        or market_state.get("credit_contraction_tightening_flag")
+    )
+    return (
+        float(market_state["cs300_return_3m"]) < 0.08
+        and float(market_state["basket_return_3m_dispersion"]) >= 0.04
+        and float(market_state["basket_return_3m_max"]) >= 0.12
+        and float(market_state["breadth_return_3m_positive"]) >= 0.80
+        and -0.12 < float(market_state["basket_drawdown_6m"]) <= -0.05
+        and not strong_crisis
+    )
+
+
+def early_structural_opportunity_active(market_state: dict[str, object] | None) -> bool:
+    if not market_state:
+        return False
+    required = (
+        "cs300_return_6m",
+        "basket_return_6m_dispersion",
+        "basket_return_6m_max",
+        "basket_excess_return_6m",
+        "breadth_return_3m_positive",
+        "basket_drawdown_6m",
+    )
+    if any(market_state.get(name) is None for name in required):
+        return False
+    strong_crisis = bool(
+        market_state.get("crisis_continuation_flag")
+        or market_state.get("domestic_liquidity_stress_flag")
+        or market_state.get("credit_contraction_tightening_flag")
+    )
+    return (
+        float(market_state["cs300_return_6m"]) < 0.02
+        and float(market_state["basket_return_6m_dispersion"]) >= 0.10
+        and float(market_state["basket_return_6m_max"]) >= 0.25
+        and float(market_state["basket_excess_return_6m"]) >= 0.05
+        and float(market_state["breadth_return_3m_positive"]) >= 0.80
+        and float(market_state["basket_drawdown_6m"]) > -0.12
+        and not strong_crisis
+    )
+
+
+def structural_repair_share_from_policy(
+    policy_name: str,
+    market_state: dict[str, object] | None = None,
+) -> float:
+    marker = None
+    for candidate in (
+        "_structural_resilience_repair_top",
+        "_structural_mombreadth_repair_top",
+        "_structural_groupbreadth_repair_top",
+        "_structural_reflation_repair_top",
+        "_structural_conditional_repair_top",
+        "_structural_multistate_repair_top",
+        "_structural_latecycle_techpullback_repair_top",
+        "_structural_latecycle_sgrowth_repair_top",
+        "_structural_latecycle_repair_top",
+        "_structural_policycat_repair_top",
+        "_structural_cooling_repair_top",
+        "_structural_flow_repair_top",
+        "_structural_repair_top",
+    ):
+        if candidate in policy_name:
+            marker = candidate
+            break
+    if marker is None:
+        return 0.05
+    top_suffix = policy_name.split(marker, 1)[1]
+    if "_s" not in top_suffix:
+        return 0.05
+    suffix = top_suffix.split("_s", 1)[1].split("_", 1)[0]
+    try:
+        base_share = max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        base_share = 0.05
+    if "_shockcond" in policy_name:
+        if not shock_resilience_opportunity_active(market_state):
+            return base_share
+        cond_suffix = policy_name.split("_shockcond", 1)[1].split("_", 1)[0]
+    elif "_earlyrotcond" in policy_name:
+        if not broad_participation_rotation_active(market_state):
+            return base_share
+        cond_suffix = policy_name.split("_earlyrotcond", 1)[1].split("_", 1)[0]
+    elif "_rotcond" in policy_name:
+        if not rotation_structural_opportunity_active(market_state):
+            return base_share
+        cond_suffix = policy_name.split("_rotcond", 1)[1].split("_", 1)[0]
+    elif "_widecond" in policy_name:
+        if not wide_structural_opportunity_active(market_state):
+            return base_share
+        cond_suffix = policy_name.split("_widecond", 1)[1].split("_", 1)[0]
+    elif "_cond" in policy_name:
+        if not structural_opportunity_active(market_state):
+            return base_share
+        cond_suffix = policy_name.split("_cond", 1)[1].split("_", 1)[0]
+    else:
+        return base_share
+    try:
+        return max(base_share, min(float(int(cond_suffix)) / 100.0, 1.0))
+    except ValueError:
+        return base_share
+
+
+def structural_repair_top_n_from_policy(policy_name: str) -> int:
+    marker = "_repair_top"
+    if marker not in policy_name:
+        return 5
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(1, int(suffix))
+    except ValueError:
+        return 5
+
+
+def shock_resilience_share_from_policy(policy_name: str) -> float | None:
+    marker = "_shockres"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def early_resilience_share_from_policy(policy_name: str) -> float | None:
+    marker = "_earlyres"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def healthcare_resilience_share_from_policy(policy_name: str) -> float | None:
+    marker = "_hcres"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def healthcare_direct_blend_share_from_policy(policy_name: str) -> float | None:
+    marker = "_hcblend"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def local_mainline_repair_share_from_policy(policy_name: str) -> float | None:
+    marker = "_lmres"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def digital_rotation_repair_share_from_policy(policy_name: str) -> float | None:
+    marker = "_drotres"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def finance_defensive_repair_share_from_policy(policy_name: str) -> float | None:
+    marker = "_findefres"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def value_reflation_repair_share_from_policy(policy_name: str) -> float | None:
+    marker = "_valres"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def finance_catchup_repair_share_from_policy(policy_name: str) -> float | None:
+    marker = "_fcres"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def finance_bank_catchup_repair_share_from_policy(policy_name: str) -> float | None:
+    marker = "_fcbankres"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def finance_resource_catchup_repair_share_from_policy(
+    policy_name: str,
+) -> float | None:
+    marker = "_finres"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def resource_bank_catchup_repair_share_from_policy(policy_name: str) -> float | None:
+    marker = "_rbres"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def finance_catchup_market_confirmation_active(
+    market_state: dict[str, object] | None,
+) -> bool:
+    """Confirm finance catch-up after broad strength but before crisis damage."""
+
+    state = market_state or {}
+
+    def number(name: str) -> float | None:
+        raw = state.get(name)
+        return float(raw) if isinstance(raw, (int, float)) else None
+
+    pboc_tone = number("pboc_outlook_net_tone")
+    m1_m2_scissors_change = number("domestic_m1_m2_scissors_change_3m")
+    cs300_return_3m = number("cs300_return_3m")
+    basket_return_1m = number("basket_return_1m")
+    breadth_return_1m_positive = number("breadth_return_1m_positive")
+    basket_drawdown_6m = number("basket_drawdown_6m")
+    basket_vol_3m = number("basket_vol_3m")
+    return bool(
+        pboc_tone is not None
+        and pboc_tone >= 20.0
+        and m1_m2_scissors_change is not None
+        and m1_m2_scissors_change >= 0.0
+        and cs300_return_3m is not None
+        and 0.08 <= cs300_return_3m <= 0.25
+        and basket_return_1m is not None
+        and basket_return_1m >= 0.08
+        and breadth_return_1m_positive is not None
+        and breadth_return_1m_positive >= 0.80
+        and basket_drawdown_6m is not None
+        and basket_drawdown_6m > -0.08
+        and basket_vol_3m is not None
+        and basket_vol_3m <= 0.35
+    )
+
+
+def finance_breadth_rotation_market_confirmation_active(
+    market_state: dict[str, object] | None,
+) -> bool:
+    """Confirm low-volatility finance/value rotation without policy support."""
+
+    state = market_state or {}
+
+    def number(name: str) -> float | None:
+        raw = state.get(name)
+        return float(raw) if isinstance(raw, (int, float)) else None
+
+    cs300_return_3m = number("cs300_return_3m")
+    cs300_return_6m = number("cs300_return_6m")
+    basket_return_1m = number("basket_return_1m")
+    basket_return_3m_max = number("basket_return_3m_max")
+    breadth_return_1m_positive = number("breadth_return_1m_positive")
+    breadth_return_3m_positive = number("breadth_return_3m_positive")
+    basket_drawdown_6m = number("basket_drawdown_6m")
+    basket_vol_3m = number("basket_vol_3m")
+    return bool(
+        cs300_return_3m is not None
+        and 0.04 <= cs300_return_3m <= 0.12
+        and cs300_return_6m is not None
+        and 0.08 <= cs300_return_6m <= 0.24
+        and basket_return_1m is not None
+        and basket_return_1m >= 0.02
+        and basket_return_3m_max is not None
+        and basket_return_3m_max >= 0.10
+        and breadth_return_1m_positive is not None
+        and breadth_return_1m_positive >= 0.85
+        and breadth_return_3m_positive is not None
+        and breadth_return_3m_positive >= 0.85
+        and basket_drawdown_6m is not None
+        and basket_drawdown_6m > -0.04
+        and basket_vol_3m is not None
+        and basket_vol_3m <= 0.16
+        and not state.get("crisis_continuation_flag")
+        and not state.get("domestic_liquidity_stress_flag")
+        and not state.get("credit_contraction_tightening_flag")
+    )
+
+
+def value_reflation_market_confirmation_active(
+    market_state: dict[str, object] | None,
+) -> bool:
+    """Confirm value/reflation repair only in constructive, non-crisis setups."""
+
+    state = market_state or {}
+
+    def number(name: str) -> float | None:
+        raw = state.get(name)
+        return float(raw) if isinstance(raw, (int, float)) else None
+
+    pboc_tone = number("pboc_outlook_net_tone")
+    m1_m2_scissors_change = number("domestic_m1_m2_scissors_change_3m")
+    cs300_return_3m = number("cs300_return_3m")
+    basket_return_1m = number("basket_return_1m")
+    breadth_return_1m_positive = number("breadth_return_1m_positive")
+    basket_drawdown_6m = number("basket_drawdown_6m")
+    basket_vol_3m = number("basket_vol_3m")
+    return bool(
+        pboc_tone is not None
+        and pboc_tone >= 10.0
+        and m1_m2_scissors_change is not None
+        and m1_m2_scissors_change >= 0.0
+        and cs300_return_3m is not None
+        and cs300_return_3m >= -0.05
+        and cs300_return_3m <= 0.05
+        and basket_return_1m is not None
+        and basket_return_1m >= 0.04
+        and breadth_return_1m_positive is not None
+        and breadth_return_1m_positive >= 0.70
+        and basket_drawdown_6m is not None
+        and basket_drawdown_6m > -0.10
+        and basket_vol_3m is not None
+        and basket_vol_3m <= 0.35
+    )
+
+
+def finance_defensive_market_confirmation_active(
+    market_state: dict[str, object] | None,
+) -> bool:
+    """Confirm finance defensives only when broad-market leadership is muted."""
+
+    state = market_state or {}
+
+    def number(name: str) -> float | None:
+        raw = state.get(name)
+        return float(raw) if isinstance(raw, (int, float)) else None
+
+    pboc_tone = number("pboc_outlook_net_tone")
+    m1_m2_scissors_change = number("domestic_m1_m2_scissors_change_3m")
+    cs300_return_3m = number("cs300_return_3m")
+    basket_return_1m = number("basket_return_1m")
+    breadth_return_1m_positive = number("breadth_return_1m_positive")
+    basket_drawdown_6m = number("basket_drawdown_6m")
+    basket_vol_3m = number("basket_vol_3m")
+    muted_broad_market = bool(
+        cs300_return_3m is not None
+        and cs300_return_3m <= 0.05
+        and (
+            basket_return_1m is None
+            or breadth_return_1m_positive is None
+            or basket_return_1m <= 0.0
+            or breadth_return_1m_positive <= 0.50
+        )
+    )
+    return bool(
+        pboc_tone is not None
+        and pboc_tone >= 10.0
+        and m1_m2_scissors_change is not None
+        and m1_m2_scissors_change >= 0.0
+        and muted_broad_market
+        and basket_drawdown_6m is not None
+        and basket_drawdown_6m > -0.10
+        and basket_vol_3m is not None
+        and basket_vol_3m <= 0.35
+    )
+
+
+def local_mainline_direct_blend_share_from_policy(
+    policy_name: str,
+) -> float | None:
+    marker = "_lmblend"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def digital_rotation_direct_blend_share_from_policy(policy_name: str) -> float | None:
+    marker = "_drotblend"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def value_reflation_direct_blend_share_from_policy(policy_name: str) -> float | None:
+    marker = "_valblend"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def finance_catchup_direct_blend_share_from_policy(policy_name: str) -> float | None:
+    marker = "_fcblend"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def finance_bank_catchup_direct_blend_share_from_policy(
+    policy_name: str,
+) -> float | None:
+    marker = "_fcbankblend"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def finance_resource_catchup_direct_blend_share_from_policy(
+    policy_name: str,
+) -> float | None:
+    marker = "_finresblend"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def structural_direct_blend_share_from_policy(policy_name: str) -> float | None:
+    marker = "_structblend"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
+def resource_bank_catchup_direct_blend_share_from_policy(
+    policy_name: str,
+) -> float | None:
+    marker = "_rbblend"
+    if marker not in policy_name:
+        return None
+    suffix = policy_name.split(marker, 1)[1].split("_", 1)[0]
+    try:
+        return max(0.0, min(float(int(suffix)) / 100.0, 1.0))
+    except ValueError:
+        return None
+
+
 def direct_blend_share(
     policy: DirectEtfSelectorPolicy,
     market_state: dict[str, object],
+    *,
+    snapshot: date | None = None,
+    groups_by_code: dict[str, str] | None = None,
+    subthemes_by_code: dict[str, str] | None = None,
 ) -> float:
     """Choose a point-in-time blend share once per three-month holding window."""
+
+    structural_share = structural_direct_blend_share_from_policy(policy.name)
+    local_mainline_blend_share = local_mainline_direct_blend_share_from_policy(
+        policy.name
+    )
+    if (
+        local_mainline_blend_share is not None
+        and snapshot is not None
+        and subthemes_by_code is not None
+        and structural_local_mainline_pullback_reentry_active(
+            load_candidate_observations(SHARE_V5_DATASET),
+            snapshot,
+            subthemes_by_code,
+        )
+    ):
+        return max(float(policy.direct_blend_weight), local_mainline_blend_share)
+    digital_rotation_blend_share = digital_rotation_direct_blend_share_from_policy(
+        policy.name
+    )
+    if (
+        digital_rotation_blend_share is not None
+        and snapshot is not None
+        and subthemes_by_code is not None
+        and structural_digital_blowoff_rotation_active(
+            load_candidate_observations(SHARE_V5_DATASET),
+            snapshot,
+            subthemes_by_code,
+        )
+    ):
+        return max(float(policy.direct_blend_weight), digital_rotation_blend_share)
+    healthcare_blend_share = healthcare_direct_blend_share_from_policy(policy.name)
+    if (
+        healthcare_blend_share is not None
+        and snapshot is not None
+        and groups_by_code is not None
+        and structural_healthcare_leadership_active(
+            load_candidate_observations(SHARE_V5_DATASET),
+            snapshot,
+            groups_by_code,
+        )
+    ):
+        return max(float(policy.direct_blend_weight), healthcare_blend_share)
+    finance_bank_catchup_blend_share = (
+        finance_bank_catchup_direct_blend_share_from_policy(policy.name)
+    )
+    if (
+        finance_bank_catchup_blend_share is not None
+        and snapshot is not None
+        and subthemes_by_code is not None
+        and finance_catchup_market_confirmation_active(market_state)
+        and structural_finance_catchup_active(
+            load_candidate_observations(SHARE_V5_DATASET),
+            snapshot,
+            subthemes_by_code,
+        )
+    ):
+        return max(float(policy.direct_blend_weight), finance_bank_catchup_blend_share)
+    finance_resource_catchup_blend_share = (
+        finance_resource_catchup_direct_blend_share_from_policy(policy.name)
+    )
+    if (
+        finance_resource_catchup_blend_share is not None
+        and snapshot is not None
+        and subthemes_by_code is not None
+        and finance_catchup_market_confirmation_active(market_state)
+        and structural_finance_catchup_active(
+            load_candidate_observations(SHARE_V5_DATASET),
+            snapshot,
+            subthemes_by_code,
+        )
+    ):
+        return max(
+            float(policy.direct_blend_weight),
+            finance_resource_catchup_blend_share,
+        )
+    resource_bank_catchup_blend_share = (
+        resource_bank_catchup_direct_blend_share_from_policy(policy.name)
+    )
+    if (
+        resource_bank_catchup_blend_share is not None
+        and snapshot is not None
+        and subthemes_by_code is not None
+        and (
+            finance_catchup_market_confirmation_active(market_state)
+            or finance_breadth_rotation_market_confirmation_active(market_state)
+        )
+        and structural_finance_catchup_active(
+            load_candidate_observations(SHARE_V5_DATASET),
+            snapshot,
+            subthemes_by_code,
+        )
+    ):
+        return max(float(policy.direct_blend_weight), resource_bank_catchup_blend_share)
+    finance_catchup_blend_share = finance_catchup_direct_blend_share_from_policy(
+        policy.name
+    )
+    if (
+        finance_catchup_blend_share is not None
+        and snapshot is not None
+        and subthemes_by_code is not None
+        and finance_catchup_market_confirmation_active(market_state)
+        and structural_finance_catchup_active(
+            load_candidate_observations(SHARE_V5_DATASET),
+            snapshot,
+            subthemes_by_code,
+        )
+    ):
+        return max(float(policy.direct_blend_weight), finance_catchup_blend_share)
+    value_reflation_blend_share = value_reflation_direct_blend_share_from_policy(
+        policy.name
+    )
+    if (
+        value_reflation_blend_share is not None
+        and value_reflation_market_confirmation_active(market_state)
+    ):
+        return max(float(policy.direct_blend_weight), value_reflation_blend_share)
+    if (
+        structural_share is not None
+        and "_exhaustfallback" in policy.name
+        and crowded_growth_exhaustion_market_setup_active(market_state)
+    ):
+        return max(float(policy.direct_blend_weight), structural_share)
+    if structural_share is not None and rotation_structural_opportunity_active(market_state):
+        return max(float(policy.direct_blend_weight), structural_share)
+
+    if policy.name.startswith("blend_index_structural_mainline_") and "_cond_" in policy.name:
+        return (
+            float(policy.direct_blend_weight)
+            if structural_opportunity_active(market_state)
+            else 0.0
+        )
 
     strong_weight = policy.strong_trend_blend_weight
     if strong_weight is None:
@@ -591,13 +2532,16 @@ def select_direct_equity_etfs(
     snapshot: date,
     policy: DirectEtfSelectorPolicy,
     benchmark_series: list[tuple[date, float]] | None = None,
+    market_state: dict[str, object] | None = None,
 ) -> dict[str, float]:
+    repair_share = structural_repair_share_from_policy(policy.name, market_state)
     cache_key = (
         id(metas_by_index),
         id(series),
         id(benchmark_series),
         policy.name,
         snapshot,
+        repair_share,
     )
     cached = _DIRECT_SELECTION_CACHE.get(cache_key)
     if cached is not None:
@@ -776,6 +2720,430 @@ def select_direct_equity_etfs(
         )
         _DIRECT_SELECTION_CACHE[cache_key] = dict(weights)
         return weights
+    if policy.name.startswith("blend_index_weighted_stable_v9_structural_repair") or policy.name.startswith(
+        "blend_index_weighted_stable_v9_structural_flow_repair"
+    ) or policy.name.startswith(
+        "blend_index_weighted_stable_v9_structural_mombreadth_repair"
+    ) or policy.name.startswith(
+        "blend_index_weighted_stable_v9_structural_groupbreadth_repair"
+    ) or policy.name.startswith(
+        "blend_index_weighted_stable_v9_structural_reflation_repair"
+    ) or policy.name.startswith(
+        "blend_index_weighted_stable_v9_structural_conditional_repair"
+    ) or policy.name.startswith(
+        "blend_index_weighted_stable_v9_structural_multistate_repair"
+    ) or policy.name.startswith(
+        "blend_index_weighted_stable_v9_structural_latecycle_techpullback_repair"
+    ) or policy.name.startswith(
+        "blend_index_weighted_stable_v9_structural_latecycle_sgrowth_repair"
+    ) or policy.name.startswith(
+        "blend_index_weighted_stable_v9_structural_latecycle_repair"
+    ) or policy.name.startswith(
+        "blend_index_weighted_stable_v9_structural_policycat_repair"
+    ) or policy.name.startswith(
+        "blend_index_weighted_stable_v9_structural_cooling_repair"
+    ) or policy.name.startswith(
+        "blend_index_weighted_stable_v9_structural_resilience_repair"
+    ):
+        if "structural_flow_repair" in policy.name:
+            repair_score = "liquidity_flow"
+        elif "structural_groupbreadth_repair" in policy.name:
+            repair_score = "liquidity_group_breadth"
+        elif "structural_reflation_repair" in policy.name:
+            repair_score = "reflation_rotation"
+        elif "structural_conditional_repair" in policy.name:
+            repair_score = "conditional_rotation"
+        elif "structural_multistate_repair" in policy.name:
+            repair_score = "multistate_rotation"
+        elif "structural_latecycle_techpullback_repair" in policy.name:
+            repair_score = "late_cycle_tech_pullback_continuation"
+        elif "structural_latecycle_sgrowth_repair" in policy.name:
+            repair_score = "late_cycle_small_growth_recovery"
+        elif "structural_latecycle_repair" in policy.name:
+            repair_score = "late_cycle_defensive_rotation"
+        elif "structural_policycat_repair" in policy.name:
+            repair_score = "late_cycle_policy_catalyst_rotation"
+        elif "structural_cooling_repair" in policy.name:
+            repair_score = "cooling_rotation"
+        elif "structural_mombreadth_repair" in policy.name:
+            repair_score = "momentum_breadth"
+        elif "structural_resilience_repair" in policy.name:
+            repair_score = "resilience"
+        else:
+            repair_score = "mainline"
+        shock_resilience_share = shock_resilience_share_from_policy(policy.name)
+        if (
+            shock_resilience_share is not None
+            and shock_resilience_opportunity_active(market_state)
+        ):
+            repair_score = "resilience"
+            repair_share = max(repair_share, shock_resilience_share)
+        early_resilience_share = early_resilience_share_from_policy(policy.name)
+        if (
+            early_resilience_share is not None
+            and early_structural_opportunity_active(market_state)
+        ):
+            repair_score = "resilience"
+            repair_share = max(repair_share, early_resilience_share)
+        groups_by_code = structural_theme_groups_from_metas(metas_by_index)
+        subthemes_by_code = structural_subtheme_groups_from_metas(metas_by_index)
+        finance_substyles_by_code = structural_finance_substyles_from_metas(
+            metas_by_index
+        )
+        resource_bank_styles_by_code = (
+            structural_resource_bank_catchup_styles_from_metas(metas_by_index)
+        )
+        share_rows = load_candidate_observations(SHARE_V5_DATASET)
+        healthcare_resilience_share = healthcare_resilience_share_from_policy(policy.name)
+        if (
+            repair_score in {
+                "conditional_rotation",
+                "multistate_rotation",
+                "late_cycle_defensive_rotation",
+                "finance_defensive_rotation",
+                "late_cycle_small_growth_recovery",
+                "late_cycle_tech_pullback_continuation",
+                "late_cycle_policy_catalyst_rotation",
+            }
+            and healthcare_resilience_share is not None
+        ):
+            if structural_healthcare_leadership_active(
+                share_rows,
+                snapshot,
+                groups_by_code,
+            ):
+                repair_share = max(repair_share, healthcare_resilience_share)
+        new_energy_restart_active = (
+            repair_score == "new_energy_pullback_restart"
+            and structural_new_energy_pullback_restart_active(
+                share_rows,
+                snapshot,
+                subthemes_by_code,
+            )
+        )
+        local_mainline_repair_share = local_mainline_repair_share_from_policy(
+            policy.name
+        )
+        local_mainline_active = structural_local_mainline_pullback_reentry_active(
+            share_rows,
+            snapshot,
+            subthemes_by_code,
+        )
+        if (
+            repair_score
+            in {"late_cycle_tech_pullback_continuation", "resilience"}
+            and local_mainline_repair_share is not None
+            and local_mainline_active
+        ):
+            repair_score = "local_mainline_pullback_reentry"
+            repair_share = max(repair_share, local_mainline_repair_share)
+        digital_rotation_repair_share = digital_rotation_repair_share_from_policy(
+            policy.name
+        )
+        digital_rotation_active = structural_digital_blowoff_rotation_active(
+            share_rows,
+            snapshot,
+            subthemes_by_code,
+        )
+        if (
+            repair_score == "late_cycle_tech_pullback_continuation"
+            and digital_rotation_repair_share is not None
+            and digital_rotation_active
+        ):
+            repair_share = max(repair_share, digital_rotation_repair_share)
+        value_reflation_active = value_reflation_market_confirmation_active(
+            market_state
+        )
+        value_reflation_repair_share = value_reflation_repair_share_from_policy(
+            policy.name
+        )
+        if (
+            repair_score == "late_cycle_tech_pullback_continuation"
+            and value_reflation_repair_share is not None
+            and value_reflation_active
+        ):
+            repair_score = "value_reflation_mainline"
+            repair_share = max(repair_share, value_reflation_repair_share)
+        finance_catchup_active = (
+            finance_catchup_market_confirmation_active(market_state)
+            and structural_finance_catchup_active(
+                share_rows,
+                snapshot,
+                subthemes_by_code,
+            )
+        )
+        finance_catchup_repair_share = finance_catchup_repair_share_from_policy(
+            policy.name
+        )
+        if (
+            repair_score == "late_cycle_tech_pullback_continuation"
+            and finance_catchup_repair_share is not None
+            and finance_catchup_active
+        ):
+            repair_score = "finance_catchup"
+            repair_share = max(repair_share, finance_catchup_repair_share)
+        finance_bank_catchup_repair_share = (
+            finance_bank_catchup_repair_share_from_policy(policy.name)
+        )
+        if (
+            repair_score == "late_cycle_tech_pullback_continuation"
+            and finance_bank_catchup_repair_share is not None
+            and finance_catchup_active
+        ):
+            repair_score = "finance_bank_catchup"
+            repair_share = max(repair_share, finance_bank_catchup_repair_share)
+        finance_resource_catchup_repair_share = (
+            finance_resource_catchup_repair_share_from_policy(policy.name)
+        )
+        if (
+            repair_score == "late_cycle_tech_pullback_continuation"
+            and finance_resource_catchup_repair_share is not None
+            and finance_catchup_active
+        ):
+            repair_score = "finance_resource_catchup"
+            repair_share = max(repair_share, finance_resource_catchup_repair_share)
+        resource_bank_catchup_active = (
+            finance_catchup_market_confirmation_active(market_state)
+            and structural_finance_catchup_active(
+                share_rows,
+                snapshot,
+                subthemes_by_code,
+            )
+        )
+        resource_bank_catchup_repair_share = (
+            resource_bank_catchup_repair_share_from_policy(policy.name)
+        )
+        if (
+            repair_score == "late_cycle_tech_pullback_continuation"
+            and resource_bank_catchup_repair_share is not None
+            and resource_bank_catchup_active
+        ):
+            repair_score = "resource_bank_catchup"
+            repair_share = max(repair_share, resource_bank_catchup_repair_share)
+        finance_defensive_active = structural_finance_defensive_rotation_active(
+            share_rows,
+            snapshot,
+            subthemes_by_code,
+        ) and finance_defensive_market_confirmation_active(market_state)
+        finance_defensive_repair_share = finance_defensive_repair_share_from_policy(
+            policy.name
+        )
+        if (
+            repair_score == "late_cycle_tech_pullback_continuation"
+            and finance_defensive_repair_share is not None
+            and finance_defensive_active
+        ):
+            repair_score = "finance_defensive_rotation"
+            repair_share = max(repair_share, finance_defensive_repair_share)
+        repair_top_n = structural_repair_top_n_from_policy(policy.name)
+        if repair_score == "resilience":
+            repair_top_n = max(repair_top_n, 5)
+        if (
+            "_exhaustfallback" in policy.name
+            and crowded_growth_exhaustion_fallback_active(
+                share_rows,
+                snapshot,
+                groups_by_code,
+                market_state,
+            )
+            and not (
+                "_purestructcond" in policy.name
+                and pure_structural_rotation_active(market_state)
+            )
+        ):
+            weights = price_value_exhaustion_fallback_weights(
+                metas_by_index,
+                series,
+                snapshot,
+                top_n=repair_top_n,
+            )
+        else:
+            cold_start_scores = {}
+            if "_coldstart" in policy.name:
+                local_mainline_subthemes = (
+                    structural_local_mainline_pullback_reentry_subthemes(
+                        share_rows,
+                        snapshot,
+                        subthemes_by_code,
+                    )
+                    if repair_score == "local_mainline_pullback_reentry"
+                    else set()
+                )
+                extra_allowed_subthemes = set()
+                if digital_rotation_active:
+                    extra_allowed_subthemes.update({"communication", "utilities"})
+                if (
+                    repair_score == "finance_defensive_rotation"
+                    and finance_defensive_active
+                ):
+                    extra_allowed_subthemes.update(
+                        {"finance", "resources", "consumer", "utilities"}
+                    )
+                if (
+                    repair_score == "value_reflation_mainline"
+                    and value_reflation_active
+                ):
+                    extra_allowed_subthemes.update(
+                        {"finance", "resources"}
+                    )
+                if repair_score == "finance_catchup" and finance_catchup_active:
+                    extra_allowed_subthemes.add("finance")
+                if repair_score == "finance_bank_catchup" and finance_catchup_active:
+                    extra_allowed_subthemes.add("finance")
+                if (
+                    repair_score == "finance_resource_catchup"
+                    and finance_catchup_active
+                ):
+                    extra_allowed_subthemes.update({"finance", "resources"})
+                if (
+                    repair_score == "resource_bank_catchup"
+                    and resource_bank_catchup_active
+                ):
+                    extra_allowed_subthemes.update({"finance", "resources"})
+                if (
+                    repair_score == "new_energy_pullback_restart"
+                    and new_energy_restart_active
+                ):
+                    extra_allowed_subthemes.add("new_energy")
+                if repair_score == "local_mainline_pullback_reentry":
+                    extra_allowed_subthemes.update(local_mainline_subthemes)
+                cold_start_scores = structural_price_cold_start_scores(
+                    metas_by_index,
+                    series,
+                    snapshot,
+                    excluded_codes={str(row["ts_code"]) for row in share_rows},
+                    extra_allowed_subthemes=extra_allowed_subthemes,
+                    allow_nonpositive_1m_subthemes=(
+                        {"finance", "resources"}
+                        if repair_score == "value_reflation_mainline"
+                        else {"finance"}
+                        if repair_score in {"finance_catchup", "finance_bank_catchup"}
+                        else {"finance", "resources"}
+                        if repair_score == "finance_resource_catchup"
+                        else {"finance", "resources"}
+                        if repair_score == "resource_bank_catchup"
+                        else {"new_energy"}
+                        if repair_score == "new_energy_pullback_restart"
+                        else local_mainline_subthemes
+                        if repair_score == "local_mainline_pullback_reentry"
+                        else set()
+                    ),
+                )
+                if (
+                    repair_score == "new_energy_pullback_restart"
+                    and new_energy_restart_active
+                ):
+                    cold_start_scores = {
+                        code: score
+                        for code, score in cold_start_scores.items()
+                        if subthemes_by_code.get(code) == "new_energy"
+                    }
+                elif repair_score == "local_mainline_pullback_reentry":
+                    cold_start_scores = {
+                        code: score
+                        for code, score in cold_start_scores.items()
+                        if subthemes_by_code.get(code) in local_mainline_subthemes
+                    }
+                elif digital_rotation_active:
+                    cold_start_scores = {
+                        code: score
+                        for code, score in cold_start_scores.items()
+                        if subthemes_by_code.get(code) in {"communication", "utilities"}
+                    }
+                elif (
+                    repair_score == "finance_defensive_rotation"
+                    and finance_defensive_active
+                ):
+                    cold_start_scores = {
+                        code: score
+                        for code, score in cold_start_scores.items()
+                        if subthemes_by_code.get(code)
+                        in {"finance", "resources", "consumer", "utilities"}
+                    }
+                elif (
+                    repair_score == "value_reflation_mainline"
+                    and value_reflation_active
+                ):
+                    cold_start_scores = {
+                        code: score
+                        for code, score in cold_start_scores.items()
+                        if subthemes_by_code.get(code)
+                        in {"finance", "resources"}
+                    }
+                elif repair_score == "finance_catchup" and finance_catchup_active:
+                    cold_start_scores = {
+                        code: score
+                        for code, score in cold_start_scores.items()
+                        if subthemes_by_code.get(code) == "finance"
+                    }
+                elif (
+                    repair_score == "finance_bank_catchup"
+                    and finance_catchup_active
+                ):
+                    cold_start_scores = {
+                        code: score
+                        for code, score in cold_start_scores.items()
+                        if subthemes_by_code.get(code) == "finance"
+                        and finance_substyles_by_code.get(code) == "bank_dividend"
+                    }
+                elif (
+                    repair_score == "finance_resource_catchup"
+                    and finance_catchup_active
+                ):
+                    cold_start_scores = {
+                        code: score
+                        for code, score in cold_start_scores.items()
+                        if subthemes_by_code.get(code) == "resources"
+                        or (
+                            subthemes_by_code.get(code) == "finance"
+                            and finance_substyles_by_code.get(code)
+                            == "bank_dividend"
+                        )
+                    }
+                elif (
+                    repair_score == "resource_bank_catchup"
+                    and resource_bank_catchup_active
+                ):
+                    cold_start_scores = {
+                        code: score
+                        for code, score in cold_start_scores.items()
+                        if resource_bank_styles_by_code.get(code)
+                        in {"resources", "bank"}
+                    }
+            weights = v9_structural_repair_weights(
+                snapshot,
+                repair_share,
+                repair_score=repair_score,
+                repair_top_n=repair_top_n,
+                groups_by_code=groups_by_code,
+                subthemes_by_code=subthemes_by_code,
+                finance_substyles_by_code=finance_substyles_by_code,
+                resource_bank_styles_by_code=resource_bank_styles_by_code,
+                pure_structural=(
+                    "_purestruct" in policy.name
+                    and (
+                        "_purestructcond" not in policy.name
+                        or pure_structural_rotation_active(market_state)
+                    )
+                ),
+                cold_start_scores=cold_start_scores,
+            )
+        weights = {
+            code: weight
+            for code, weight in weights.items()
+            if code in metas
+            and metas[code].list_date <= snapshot
+            and metas[code].first_trade_date <= snapshot
+            and bool(series.get(code))
+        }
+        total = sum(weights.values())
+        weights = (
+            {code: weight / total for code, weight in weights.items()}
+            if total > 0
+            else {}
+        )
+        _DIRECT_SELECTION_CACHE[cache_key] = dict(weights)
+        return weights
     if policy.name.startswith("blend_index_weighted_stable_v10_b050_v500"):
         roe_weight = 0.75 if "roe075" in policy.name else 1.0
         weights = select_weighted_stable_combo_v10_top1(
@@ -803,6 +3171,38 @@ def select_direct_equity_etfs(
         weights = select_weighted_stable_combo_v9_top1(
             load_candidate_observations(CONSTITUENT_V4_DATASET), snapshot
         )
+        weights = {
+            code: weight
+            for code, weight in weights.items()
+            if code in metas
+            and metas[code].list_date <= snapshot
+            and metas[code].first_trade_date <= snapshot
+            and bool(series.get(code))
+        }
+        total = sum(weights.values())
+        weights = (
+            {code: weight / total for code, weight in weights.items()}
+            if total > 0
+            else {}
+        )
+        _DIRECT_SELECTION_CACHE[cache_key] = dict(weights)
+        return weights
+    if policy.name.startswith("direct_structural_mainline_") or policy.name.startswith(
+        "blend_index_structural_mainline_"
+    ):
+        selector = (
+            select_weighted_structural_liquidity_flow_top5
+            if "_flow_" in policy.name
+            else select_weighted_structural_momentum_breadth_top3
+            if "_mombreadth_" in policy.name
+            else select_weighted_structural_resilience_top5
+            if "_resilience_" in policy.name
+            else
+            select_weighted_structural_mainline_top5
+            if "_top5" in policy.name
+            else select_weighted_structural_mainline_top3
+        )
+        weights = selector(load_candidate_observations(SHARE_V5_DATASET), snapshot)
         weights = {
             code: weight
             for code, weight in weights.items()

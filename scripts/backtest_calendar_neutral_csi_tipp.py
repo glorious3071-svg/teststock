@@ -59,6 +59,8 @@ from backtest.domestic_equity_etf import (  # noqa: E402
     portfolio_turnover,
     select_direct_equity_etfs,
     direct_blend_share,
+    structural_subtheme_groups_from_metas,
+    structural_theme_groups_from_metas,
 )
 
 OUT_DIR = ROOT / "data" / "backtests"
@@ -171,6 +173,37 @@ def code_return(series: dict[str, list[tuple[date, float]]], code: str, start: d
     return end_price / start_price - 1.0
 
 
+class CodeReturnCache:
+    """Memoize point-in-time close-to-close returns for repeated daily replays."""
+
+    def __init__(self, series: dict[str, list[tuple[date, float]]]) -> None:
+        self.series = series
+        self._cache: dict[tuple[str, date, date], float] = {}
+        self._price_cache: dict[tuple[str, date], float | None] = {}
+
+    def price_for(self, code: str, boundary: date) -> float | None:
+        key = (code, boundary)
+        if key not in self._price_cache:
+            self._price_cache[key] = price_at(self.series, code, boundary)
+        return self._price_cache[key]
+
+    def return_for(self, code: str, start: date, end: date) -> float:
+        key = (code, start, end)
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        start_price = self.price_for(code, start)
+        end_price = self.price_for(code, end)
+        if not start_price or not end_price or start_price <= 0:
+            value = 0.0
+        else:
+            value = end_price / start_price - 1.0
+        self._cache[key] = value
+        return value
+
+    __call__ = return_for
+
+
 def benchmark_bear_state(
     series: dict[str, list[tuple[date, float]]],
     benchmark_dates: list[date],
@@ -248,11 +281,12 @@ def build_daily_path(
     common_completion_lag_days: int | None = None,
     schedule_anchor: date | None = None,
     bear_signal_timing: str = "execution",
+    base_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if bear_signal_timing not in {"execution", "snapshot"}:
         raise ValueError("bear_signal_timing must be 'execution' or 'snapshot'")
     saved_hybrid = selector_policy.name == "saved_regime_momentum_hybrid"
-    base = run_phase_schedule(
+    base = base_override or run_phase_schedule(
         schedule,
         phase,
         lag,
@@ -270,10 +304,23 @@ def build_daily_path(
         schedule_anchor=schedule_anchor,
     )
     daily = []
+    index_return_cache = CodeReturnCache(series)
+    etf_return_cache = CodeReturnCache(equity_etf_series) if equity_etf_series is not None else None
     previous_etf_weights: dict[str, float] = {}
+    equity_etf_groups = (
+        structural_theme_groups_from_metas(equity_etf_metas)
+        if equity_etf_metas is not None
+        else None
+    )
+    equity_etf_subthemes = (
+        structural_subtheme_groups_from_metas(equity_etf_metas)
+        if equity_etf_metas is not None
+        else None
+    )
     for row in base["rows"]:
         start = date.fromisoformat(row["start_exec"])
         end = date.fromisoformat(row["end_exec"])
+        snapshot = date.fromisoformat(row["start_snapshot_date"])
         days = trade_days_between(trade_dates, start, end)
         codes = list(row["holding_codes"])
         holding_weights = row["holding_weights"]
@@ -293,7 +340,7 @@ def build_daily_path(
         etf_weights = (
             map_indices_to_etfs(
                 holding_weights,
-                date.fromisoformat(row["start_snapshot_date"]),
+                snapshot,
                 equity_etf_metas,
                 etf_series=equity_etf_series,
                 allow_early_broad_proxy=True,
@@ -307,14 +354,18 @@ def build_daily_path(
             direct_weights = select_direct_equity_etfs(
                 equity_etf_metas,
                 equity_etf_series,
-                date.fromisoformat(row["start_snapshot_date"]),
+                snapshot,
                 direct_etf_policy,
                 benchmark_series=series.get(CS300_CODE),
+                market_state=dict(row.get("market_state") or {}),
             )
             if direct_weights:
                 direct_share = direct_blend_share(
                     direct_etf_policy,
                     dict(row.get("market_state") or {}),
+                    snapshot=snapshot,
+                    groups_by_code=equity_etf_groups,
+                    subthemes_by_code=equity_etf_subthemes,
                 )
                 if direct_share >= 1.0 - 1e-12:
                     etf_weights = direct_weights
@@ -381,7 +432,7 @@ def build_daily_path(
                 )
             )
             returns = [
-                float(holding_weights.get(code, 0.0)) * code_return(series, code, previous, current)
+                float(holding_weights.get(code, 0.0)) * index_return_cache(code, previous, current)
                 for code in codes
             ]
             daily.append(
@@ -395,11 +446,11 @@ def build_daily_path(
                     "risk_return": sum(returns) if returns else 0.0,
                     "actual_etf_return": (
                         sum(
-                            weight * code_return(equity_etf_series, code, previous, current)
+                            weight * etf_return_cache(code, previous, current)
                             for code, weight in etf_weights.items()
                         )
                         - (turnover * TRANSACTION_COST_BPS / 10_000.0 if day_index == 0 else 0.0)
-                        if equity_etf_metas is not None
+                        if equity_etf_metas is not None and etf_return_cache is not None
                         else None
                     ),
                     "equity_etf_codes": sorted(etf_weights),
@@ -458,6 +509,7 @@ def evaluate_path(
         defensive_policy,
         defensive_selection_cache,
     )
+    defensive_return_cache = CodeReturnCache(defensive_series)
     defensive_asset_days = 0
     for row in path["daily"]:
         floor = peak * rule.floor_pct
@@ -475,7 +527,7 @@ def evaluate_path(
         if exposure <= 1.0:
             defensive_weights = defensive_schedule.weights_for(row["previous_day"])
             defensive_return = sum(
-                weight * code_return(defensive_series, code, row["previous_day"], row["day"])
+                weight * defensive_return_cache(code, row["previous_day"], row["day"])
                 for code, weight in defensive_weights.items()
             )
             defensive_return += (1.0 - sum(defensive_weights.values())) * cash_return

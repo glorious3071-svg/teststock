@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import statistics
 import sys
@@ -35,6 +36,7 @@ from backtest.domestic_equity_etf import (
     describe_equity_universe,
     load_equity_etf_return_universe,
     portfolio_turnover,
+    wide_structural_opportunity_active,
 )
 from backtest.csi_snapshot_selector import SELECTOR_POLICIES
 from backtest.strict_passive_etf_objective import (
@@ -55,9 +57,9 @@ from backtest.monthly_direction_model import (
 )
 from db.connection import get_connection
 from scripts.backtest_calendar_neutral_csi_tipp import (
+    CodeReturnCache,
     TRANSACTION_COST_BPS,
     build_daily_path,
-    code_return,
     load_selector_price_series,
 )
 from scripts.backtest_scorecard_csi_dynamic_defense import load_price_series
@@ -80,7 +82,7 @@ TARGET_MDD = STRICT_OBJECTIVE.minimum_max_drawdown
 
 OUT_DIR = ROOT / "data" / "backtests"
 EXECUTION_LAGS = (0, 1, 3, 5)
-PATH_CACHE_VERSION = "strict_quarterly_paths_v1"
+PATH_CACHE_VERSION = "strict_quarterly_paths_v17"
 
 ANNUAL_MARKET_SCORECARD = AllocationPolicy(
     "strict_annual_market_scorecard",
@@ -175,6 +177,8 @@ class StrictQuarterlyRule:
     high_level_distribution_reentry_direction_gt: float = 0.0
     high_level_distribution_reentry_pboc_gte: float = 10.0
     high_level_distribution_reentry_cs300_6m_gte: float = 0.20
+    option_panic_after_rally_cap: float | None = None
+    policy_supported_oversold_reentry_cap: float | None = None
     policy_repair_crisis_reentry_cap: float | None = None
     policy_repair_crisis_score_lte: int = 0
     policy_repair_crisis_direction_gt: float = 0.0
@@ -187,6 +191,11 @@ class StrictQuarterlyRule:
     risk_flag_exit_prior_count: int | None = None
     risk_cluster_exit_count: int | None = None
     risk_cluster_exit_prior_count: int | None = None
+    structural_opportunity_min_exposure: float = 0.0
+    structural_opportunity_postcap_min_exposure: float = 0.0
+    structural_reentry_postcap_min_exposure: float = 0.0
+    short_cycle_structural_reentry_postcap_min_exposure: float = 0.0
+    participation_reentry_postcap_min_exposure: float = 0.0
 
 
 QUALITY_SCORE_FEATURE_SETS: dict[str, tuple[tuple[str, float], ...]] = {
@@ -409,6 +418,17 @@ def path_cache_file(
             f"bear_{bear_signal_timing}",
         ]
     )
+    if len(slug) > 160:
+        digest = hashlib.sha1(slug.encode("utf-8")).hexdigest()[:16]
+        readable = "__".join(
+            [
+                PATH_CACHE_VERSION,
+                selector_name[:32],
+                direct_policy_name[:48],
+                digest,
+            ]
+        )
+        slug = readable
     return cache_dir / f"{slug}.json"
 
 
@@ -587,6 +607,65 @@ def high_level_distribution_reentry_signal(
     )
 
 
+POLICY_SUPPORTED_OVERSOLD_BLOCK_FLAGS = {
+    "crisis_continuation_flag",
+    "domestic_liquidity_stress_flag",
+    "early_history_crisis_repricing_flag",
+    "low_vol_breadth_rollover_flag",
+    "daily_margin_rally_flag",
+    "high_level_distribution_flag",
+    "leverage_macro_divergence_flag",
+}
+
+
+def policy_supported_oversold_reentry_signal(
+    market_state: dict[str, Any],
+    *,
+    active_risk_flags: Sequence[str],
+) -> bool:
+    """Raise exposure after a policy-supported, broad oversold washout."""
+
+    def number(name: str) -> float | None:
+        raw = market_state.get(name)
+        return float(raw) if isinstance(raw, (int, float)) else None
+
+    if active_risk_flags:
+        return False
+    if any(market_state.get(name) for name in POLICY_SUPPORTED_OVERSOLD_BLOCK_FLAGS):
+        return False
+    cs300_return_6m = number("cs300_return_6m")
+    basket_drawdown_6m = number("basket_drawdown_6m")
+    basket_vol_3m = number("basket_vol_3m")
+    breadth_return_3m_positive = number("breadth_return_3m_positive")
+    breadth_return_1m_positive = number("breadth_return_1m_positive")
+    basket_return_1m = number("basket_return_1m")
+    basket_return_3m_max = number("basket_return_3m_max")
+    selected_etf_drawdown_3m = number("selected_etf_drawdown_3m")
+    pboc_tone = number("pboc_outlook_net_tone")
+    policy_tone_confirmed = bool(pboc_tone is not None and pboc_tone >= 5.0)
+    one_month_breadth_repaired = bool(
+        breadth_return_1m_positive is not None
+        and breadth_return_1m_positive >= 0.90
+        and basket_return_1m is not None
+        and basket_return_1m >= 0.0
+        and selected_etf_drawdown_3m is not None
+        and selected_etf_drawdown_3m >= -0.07
+    )
+    return bool(
+        cs300_return_6m is not None
+        and cs300_return_6m <= -0.14
+        and basket_drawdown_6m is not None
+        and basket_drawdown_6m <= -0.15
+        and basket_vol_3m is not None
+        and basket_vol_3m <= 0.24
+        and breadth_return_3m_positive is not None
+        and breadth_return_3m_positive <= 0.10
+        and basket_return_3m_max is not None
+        and basket_return_3m_max <= 0.0
+        and (policy_tone_confirmed or one_month_breadth_repaired)
+    )
+
+
 def policy_repair_crisis_reentry_signal(
     market_state: dict[str, Any],
     *,
@@ -619,6 +698,127 @@ def policy_repair_crisis_reentry_signal(
         and basket_drawdown_6m is not None
         and basket_drawdown_6m <= basket_drawdown_6m_lte
         and not market_state.get("daily_margin_rally_flag")
+    )
+
+
+PARTICIPATION_REENTRY_BLOCK_FLAGS = {
+    "daily_margin_rally_flag",
+    "high_level_distribution_flag",
+    "leverage_macro_divergence_flag",
+    "leveraged_rally_exhaustion_flag",
+    "weak_credit_leveraged_rebound_flag",
+}
+
+
+def broad_participation_reentry_signal(
+    market_state: dict[str, Any],
+    *,
+    active_risk_flags: Sequence[str],
+) -> bool:
+    """Repair false low exposure when ETF participation is already broad."""
+
+    def number(name: str) -> float | None:
+        raw = market_state.get(name)
+        return float(raw) if isinstance(raw, (int, float)) else None
+
+    if set(active_risk_flags).intersection(PARTICIPATION_REENTRY_BLOCK_FLAGS):
+        return False
+    basket_return_3m_max = number("basket_return_3m_max")
+    breadth_return_3m_positive = number("breadth_return_3m_positive")
+    basket_drawdown_6m = number("basket_drawdown_6m")
+    basket_vol_3m = number("basket_vol_3m")
+    return bool(
+        basket_return_3m_max is not None
+        and basket_return_3m_max >= 0.18
+        and breadth_return_3m_positive is not None
+        and breadth_return_3m_positive >= 0.80
+        and basket_drawdown_6m is not None
+        and basket_drawdown_6m > -0.06
+        and basket_vol_3m is not None
+        and basket_vol_3m <= 0.32
+    )
+
+
+def short_cycle_structural_reentry_signal(
+    market_state: dict[str, Any],
+    *,
+    active_risk_flags: Sequence[str],
+) -> bool:
+    """Repair scorecard vetoes only when short-cycle ETF leadership is visible."""
+
+    def number(name: str) -> float | None:
+        raw = market_state.get(name)
+        return float(raw) if isinstance(raw, (int, float)) else None
+
+    if active_risk_flags:
+        return False
+    if bool(
+        market_state.get("crisis_continuation_flag")
+        or market_state.get("domestic_liquidity_stress_flag")
+        or market_state.get("credit_contraction_tightening_flag")
+    ):
+        return False
+    cs300_return_3m = number("cs300_return_3m")
+    basket_return_1m = number("basket_return_1m")
+    basket_return_1m_dispersion = number("basket_return_1m_dispersion")
+    basket_return_1m_max = number("basket_return_1m_max")
+    breadth_return_1m_positive = number("breadth_return_1m_positive")
+    basket_drawdown_3m = number("basket_drawdown_3m")
+    selected_etf_momentum_3m = number("selected_etf_momentum_3m")
+    selected_etf_drawdown_3m = number("selected_etf_drawdown_3m")
+    basket_vol_3m = number("basket_vol_3m")
+    if bool(
+        cs300_return_3m is not None
+        and cs300_return_3m < 0.10
+        and basket_return_1m is not None
+        and basket_return_1m >= 0.08
+        and basket_return_1m_dispersion is not None
+        and basket_return_1m_dispersion >= 0.07
+        and basket_return_1m_max is not None
+        and basket_return_1m_max >= 0.16
+        and breadth_return_1m_positive is not None
+        and breadth_return_1m_positive >= 0.80
+        and basket_drawdown_3m is not None
+        and basket_drawdown_3m > -0.08
+        and selected_etf_momentum_3m is not None
+        and selected_etf_momentum_3m >= 0.02
+        and selected_etf_drawdown_3m is not None
+        and selected_etf_drawdown_3m > -0.04
+        and basket_vol_3m is not None
+        and basket_vol_3m <= 0.26
+    ):
+        return True
+    cs300_return_6m = number("cs300_return_6m")
+    basket_return_3m_max = number("basket_return_3m_max")
+    basket_return_3m_dispersion = number("basket_return_3m_dispersion")
+    basket_return_6m_dispersion = number("basket_return_6m_dispersion")
+    basket_drawdown_6m = number("basket_drawdown_6m")
+    etf_share_growth_positive = number("etf_share_growth_1q_positive_ratio")
+    pboc_tone = number("pboc_outlook_net_tone")
+    m1_m2_change = number("domestic_m1_m2_scissors_change_3m")
+    return bool(
+        cs300_return_3m is not None
+        and -0.22 <= cs300_return_3m <= 0.02
+        and cs300_return_6m is not None
+        and cs300_return_6m > -0.25
+        and basket_return_3m_max is not None
+        and basket_return_3m_max >= 0.10
+        and basket_return_3m_dispersion is not None
+        and basket_return_3m_dispersion >= 0.10
+        and basket_return_6m_dispersion is not None
+        and basket_return_6m_dispersion >= 0.07
+        and basket_drawdown_6m is not None
+        and basket_drawdown_6m > -0.16
+        and basket_vol_3m is not None
+        and basket_vol_3m <= 0.38
+        and breadth_return_1m_positive is not None
+        and breadth_return_1m_positive >= 0.35
+        and etf_share_growth_positive is not None
+        and etf_share_growth_positive >= 0.45
+        and pboc_tone is not None
+        and pboc_tone >= 20.0
+        and m1_m2_change is not None
+        and m1_m2_change >= 0.0
     )
 
 
@@ -3622,6 +3822,83 @@ RULES += tuple(
     for minimum_exposure in (0.45, 0.48, 0.50, 0.52)
 )
 
+RULES += tuple(
+    replace(
+        rule,
+        name=f"{rule.name}_structfloor{int(round(floor * 100)):02d}",
+        structural_opportunity_min_exposure=floor,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_qfree_stack_highdist800"
+    for floor in (0.40, 0.41, 0.42, 0.43, 0.44, 0.45, 0.48, 0.50, 0.60)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"{rule.name}_structpost{int(round(floor * 100)):02d}",
+        structural_opportunity_postcap_min_exposure=floor,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_qfree_stack_highdist800"
+    for floor in (0.40, 0.41, 0.42, 0.43, 0.44, 0.45, 0.48, 0.50, 0.60)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"{rule.name}_structreentry{int(round(floor * 100)):02d}",
+        structural_reentry_postcap_min_exposure=floor,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_qfree_stack_highdist800"
+    for floor in (0.10, 0.15, 0.20)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"{rule.name}_screentry{int(round(floor * 100)):02d}",
+        short_cycle_structural_reentry_postcap_min_exposure=floor,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_qfree_stack_highdist800"
+    for floor in (0.50,)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"{rule.name}_oversoldpol{int(round(cap * 1000)):03d}",
+        policy_supported_oversold_reentry_cap=cap,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_qfree_stack_highdist800_screentry50"
+    for cap in (0.45, 0.50, 0.55, 0.60, 0.70)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"{rule.name}_opcap{int(round(cap * 1000)):03d}",
+        option_panic_after_rally_cap=cap,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_qfree_stack_highdist800_screentry50_oversoldpol700"
+    for cap in (0.55,)
+)
+
+RULES += tuple(
+    replace(
+        rule,
+        name=f"{rule.name}_partreentry{int(round(floor * 100)):02d}",
+        participation_reentry_postcap_min_exposure=floor,
+    )
+    for rule in RULES
+    if rule.name == "q_mdd20_qfree_stack_highdist800"
+    for floor in (0.45, 0.50, 0.55)
+)
+
 QUARTERLY_RISK_FLAGS = (
     "market_overheat_flag",
     "rebound_overheat_flag",
@@ -3777,6 +4054,62 @@ def safe_gate_flags_allowed(
     active_flags: list[str], blocked_flags: tuple[str, ...]
 ) -> bool:
     return not set(active_flags).intersection(blocked_flags)
+
+
+def safe_gate_pathrisk_blocked(
+    active_flags: list[str],
+    direction_risk_gate_decision: Mapping[str, Any],
+    *,
+    threshold: float = -0.10,
+) -> bool:
+    """Keep leverage-crowding caps active when path-risk evidence is negative."""
+
+    if "leverage_macro_divergence_flag" not in active_flags:
+        return False
+    raw_score = direction_risk_gate_decision.get("score")
+    if raw_score is None:
+        return False
+    try:
+        score = float(raw_score)
+    except (TypeError, ValueError):
+        return False
+    return score <= threshold
+
+
+def option_panic_after_rally_cap_signal(
+    market_state: Mapping[str, Any],
+    active_risk_flags: Sequence[str],
+) -> bool:
+    """Cap exposure after a broad rally when option panic flags fragile breadth."""
+
+    def number(name: str) -> float | None:
+        raw = market_state.get(name)
+        return float(raw) if isinstance(raw, (int, float)) else None
+
+    cs300_return_3m = number("cs300_return_3m")
+    cs300_return_6m = number("cs300_return_6m")
+    basket_return_1m = number("basket_return_1m")
+    basket_drawdown_6m = number("basket_drawdown_6m")
+    basket_vol_3m = number("basket_vol_3m")
+    pboc_tone = number("pboc_outlook_net_tone")
+    m1_m2_scissors_change = number("domestic_m1_m2_scissors_change_3m")
+    return bool(
+        "option_panic_after_rally_flag" in set(active_risk_flags)
+        and cs300_return_3m is not None
+        and -0.03 <= cs300_return_3m <= 0.05
+        and cs300_return_6m is not None
+        and cs300_return_6m >= 0.10
+        and basket_return_1m is not None
+        and basket_return_1m >= 0.04
+        and basket_drawdown_6m is not None
+        and basket_drawdown_6m > -0.10
+        and basket_vol_3m is not None
+        and 0.25 <= basket_vol_3m <= 0.38
+        and pboc_tone is not None
+        and pboc_tone >= 10.0
+        and m1_m2_scissors_change is not None
+        and m1_m2_scissors_change >= 0.0
+    )
 
 
 def direction_boost_allowed(
@@ -4104,6 +4437,8 @@ def evaluate_path(
     quality_high_count = 0
     quality_low_count = 0
     annual_scorecard_entry_score: int | None = None
+    equity_return_cache = CodeReturnCache(equity_series)
+    defensive_return_cache = CodeReturnCache(defensive_series)
 
     for row in path["daily"]:
         if row["window_start"]:
@@ -4479,6 +4814,32 @@ def evaluate_path(
                 active=secondary_recovery_active,
                 details={"floor": rule.secondary_recovery_min_exposure},
             )
+            structural_opportunity_floor_active = bool(
+                rule.structural_opportunity_min_exposure > 0
+                and wide_structural_opportunity_active(row["market_state"])
+                and not row["bear_state"]
+            )
+            before_stage = exposure
+            if structural_opportunity_floor_active:
+                exposure = max(
+                    exposure,
+                    min(
+                        rule.structural_opportunity_min_exposure,
+                        rule.max_exposure,
+                        effective_base_weight * rule.base_scale,
+                    ),
+                )
+            append_exposure_trace_stage(
+                exposure_trace,
+                "structural_opportunity_floor",
+                before_stage,
+                exposure,
+                active=structural_opportunity_floor_active,
+                details={
+                    "floor": rule.structural_opportunity_min_exposure,
+                    "trigger": "wide_structural_opportunity",
+                },
+            )
             risk_cap_active = bool(
                 active_risk_flags
                 and (
@@ -4488,8 +4849,13 @@ def evaluate_path(
                     )
                 )
             )
+            pathrisk_safe_gate_blocked = safe_gate_pathrisk_blocked(
+                active_risk_flags,
+                direction_risk_gate_decision,
+            )
             learned_safe_gate_allowed_effective = bool(
                 risk_gate_allowed
+                and not pathrisk_safe_gate_blocked
                 and safe_gate_cluster_allowed(
                     active_risk_clusters,
                     rule.feature_risk_safe_gate_clusters,
@@ -4501,6 +4867,7 @@ def evaluate_path(
             )
             cold_start_safe_gate_allowed_effective = bool(
                 cold_start_gate_candidate
+                and not pathrisk_safe_gate_blocked
                 and safe_gate_cluster_allowed(
                     active_risk_clusters,
                     rule.feature_risk_safe_gate_clusters,
@@ -4553,6 +4920,7 @@ def evaluate_path(
                     "safe_gate_relaxed": safe_gate_relaxed_risk_cap_active,
                     "safe_gate_allowed": risk_gate_allowed,
                     "safe_gate_allowed_effective": safe_gate_allowed_effective,
+                    "safe_gate_pathrisk_blocked": pathrisk_safe_gate_blocked,
                     "learned_safe_gate_allowed_effective": (
                         learned_safe_gate_allowed_effective
                     ),
@@ -4570,6 +4938,27 @@ def evaluate_path(
                         rule.feature_risk_cold_start_gate_cap
                     ),
                     "effective_safe_gate_cap": effective_safe_gate_cap,
+                },
+            )
+            option_panic_cap_active = bool(
+                rule.option_panic_after_rally_cap is not None
+                and option_panic_after_rally_cap_signal(
+                    row["market_state"],
+                    active_risk_flags,
+                )
+            )
+            before_stage = exposure
+            if option_panic_cap_active:
+                exposure = min(exposure, float(rule.option_panic_after_rally_cap))
+            append_exposure_trace_stage(
+                exposure_trace,
+                "option_panic_after_rally_cap",
+                before_stage,
+                exposure,
+                active=option_panic_cap_active,
+                details={
+                    "cap": rule.option_panic_after_rally_cap,
+                    "flags": active_risk_flags,
                 },
             )
             before_stage = exposure
@@ -4838,6 +5227,141 @@ def evaluate_path(
                     "basket_drawdown_6m_lte": (
                         rule.feature_recovery_basket_drawdown_6m_lte
                     ),
+                },
+            )
+            postcap_structural_opportunity_floor_active = bool(
+                rule.structural_opportunity_postcap_min_exposure > 0
+                and wide_structural_opportunity_active(row["market_state"])
+                and not row["bear_state"]
+            )
+            before_stage = exposure
+            if postcap_structural_opportunity_floor_active:
+                exposure = max(
+                    exposure,
+                    min(
+                        rule.structural_opportunity_postcap_min_exposure,
+                        rule.max_exposure,
+                        effective_base_weight * rule.base_scale,
+                    ),
+                )
+            append_exposure_trace_stage(
+                exposure_trace,
+                "structural_opportunity_postcap_floor",
+                before_stage,
+                exposure,
+                active=postcap_structural_opportunity_floor_active,
+                details={
+                    "floor": rule.structural_opportunity_postcap_min_exposure,
+                    "trigger": "wide_structural_opportunity",
+                },
+            )
+            structural_reentry_postcap_active = bool(
+                rule.structural_reentry_postcap_min_exposure > 0
+                and wide_structural_opportunity_active(row["market_state"])
+                and not row["bear_state"]
+                and not active_risk_flags
+            )
+            before_stage = exposure
+            if structural_reentry_postcap_active:
+                exposure = max(
+                    exposure,
+                    min(
+                        rule.structural_reentry_postcap_min_exposure,
+                        rule.max_exposure,
+                    ),
+                )
+            append_exposure_trace_stage(
+                exposure_trace,
+                "structural_reentry_postcap_floor",
+                before_stage,
+                exposure,
+                active=structural_reentry_postcap_active,
+                details={
+                    "floor": rule.structural_reentry_postcap_min_exposure,
+                    "trigger": "wide_structural_opportunity_no_active_risk_flags",
+                },
+            )
+            short_cycle_structural_reentry_postcap_active = bool(
+                rule.short_cycle_structural_reentry_postcap_min_exposure > 0
+                and short_cycle_structural_reentry_signal(
+                    row["market_state"],
+                    active_risk_flags=active_risk_flags,
+                )
+                and not row["bear_state"]
+            )
+            before_stage = exposure
+            if short_cycle_structural_reentry_postcap_active:
+                exposure = max(
+                    exposure,
+                    min(
+                        rule.short_cycle_structural_reentry_postcap_min_exposure,
+                        rule.max_exposure,
+                    ),
+                )
+            append_exposure_trace_stage(
+                exposure_trace,
+                "short_cycle_structural_reentry_postcap_floor",
+                before_stage,
+                exposure,
+                active=short_cycle_structural_reentry_postcap_active,
+                details={
+                    "floor": rule.short_cycle_structural_reentry_postcap_min_exposure,
+                    "trigger": "short_cycle_structural_reentry",
+                },
+            )
+            participation_reentry_postcap_active = bool(
+                rule.participation_reentry_postcap_min_exposure > 0
+                and broad_participation_reentry_signal(
+                    row["market_state"],
+                    active_risk_flags=active_risk_flags,
+                )
+                and not row["bear_state"]
+            )
+            before_stage = exposure
+            if participation_reentry_postcap_active:
+                exposure = max(
+                    exposure,
+                    min(
+                        rule.participation_reentry_postcap_min_exposure,
+                        rule.max_exposure,
+                    ),
+                )
+            append_exposure_trace_stage(
+                exposure_trace,
+                "participation_reentry_postcap_floor",
+                before_stage,
+                exposure,
+                active=participation_reentry_postcap_active,
+                details={
+                    "floor": rule.participation_reentry_postcap_min_exposure,
+                    "trigger": "broad_participation_reentry",
+                },
+            )
+            policy_supported_oversold_reentry_active = bool(
+                rule.policy_supported_oversold_reentry_cap is not None
+                and policy_supported_oversold_reentry_signal(
+                    row["market_state"],
+                    active_risk_flags=active_risk_flags,
+                )
+            )
+            before_stage = exposure
+            if policy_supported_oversold_reentry_active:
+                exposure = max(
+                    exposure,
+                    min(
+                        rule.max_exposure,
+                        float(rule.policy_supported_oversold_reentry_cap),
+                    ),
+                )
+            append_exposure_trace_stage(
+                exposure_trace,
+                "policy_supported_oversold_reentry",
+                before_stage,
+                exposure,
+                active=policy_supported_oversold_reentry_active,
+                details={
+                    "cap": rule.policy_supported_oversold_reentry_cap,
+                    "trigger": "policy_supported_oversold",
                 },
             )
             exposure_before_exit_stages = exposure
@@ -5290,12 +5814,9 @@ def evaluate_path(
             code: (
                 cash_return(row["previous_day"], row["day"])
                 if code == "CASH"
-                else code_return(
-                    equity_series if code in risk_codes else defensive_series,
-                    code,
-                    row["previous_day"],
-                    row["day"],
-                )
+                else (
+                    equity_return_cache if code in risk_codes else defensive_return_cache
+                )(code, row["previous_day"], row["day"])
             )
             for code in current_positions
         }
@@ -5305,12 +5826,7 @@ def evaluate_path(
             counterfactual_risk_positions = mark_frozen_positions(
                 counterfactual_risk_positions,
                 {
-                    code: code_return(
-                        equity_series,
-                        code,
-                        row["previous_day"],
-                        row["day"],
-                    )
+                    code: equity_return_cache(code, row["previous_day"], row["day"])
                     for code in counterfactual_risk_positions
                 },
             )

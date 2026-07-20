@@ -3,7 +3,17 @@ from __future__ import annotations
 import unittest
 from datetime import date, timedelta
 
-from backtest.domestic_equity_etf import DIRECT_ETF_POLICIES, direct_blend_share
+from backtest.domestic_equity_etf import (
+    DIRECT_ETF_POLICIES,
+    EquityEtfMeta,
+    direct_blend_share,
+    healthcare_resilience_share_from_policy,
+    pure_structural_rotation_active,
+    structural_direct_blend_share_from_policy,
+    structural_price_cold_start_scores,
+    structural_repair_share_from_policy,
+    structural_repair_top_n_from_policy,
+)
 from backtest.strict_passive_etf_objective import (
     STRICT_OBJECTIVE,
     validate_case_matrix,
@@ -32,10 +42,13 @@ from scripts.backtest_scorecard_csi_strict_quarterly_etf import (
     annual_score_adjusted_cushion_multiplier,
     apply_feature_exposure_cap,
     apply_feature_cushion_multiplier,
+    broad_participation_reentry_signal,
     initial_exposure_from_limits,
     market_recovery_signal,
     mark_frozen_positions,
     observe_quality_features,
+    option_panic_after_rally_cap_signal,
+    policy_supported_oversold_reentry_signal,
     quality_adjusted_cushion_multiplier,
     quality_multiplier_trend_confirmed,
     rebalance_frozen_positions,
@@ -44,6 +57,8 @@ from scripts.backtest_scorecard_csi_strict_quarterly_etf import (
     risk_flag_clusters,
     safe_gate_cluster_allowed,
     safe_gate_flags_allowed,
+    safe_gate_pathrisk_blocked,
+    short_cycle_structural_reentry_signal,
     evaluate_path,
     walkforward_quality_score,
     walkforward_upper_tail_signal,
@@ -178,6 +193,66 @@ class StrictPassiveEtfObjectiveTest(unittest.TestCase):
             )
         )
 
+    def test_policy_supported_oversold_reentry_requires_policy_tone(self) -> None:
+        oversold = {
+            "crisis_continuation_flag": 0.0,
+            "domestic_liquidity_stress_flag": 0.0,
+            "early_history_crisis_repricing_flag": 0.0,
+            "low_vol_breadth_rollover_flag": 0.0,
+            "daily_margin_rally_flag": 0.0,
+            "high_level_distribution_flag": 0.0,
+            "leverage_macro_divergence_flag": 0.0,
+            "cs300_return_6m": -0.19,
+            "basket_drawdown_6m": -0.18,
+            "basket_vol_3m": 0.19,
+            "breadth_return_3m_positive": 0.0,
+            "basket_return_3m_max": -0.01,
+            "pboc_outlook_net_tone": 5.3,
+        }
+        self.assertTrue(
+            policy_supported_oversold_reentry_signal(
+                oversold,
+                active_risk_flags=[],
+            )
+        )
+        self.assertFalse(
+            policy_supported_oversold_reentry_signal(
+                {**oversold, "pboc_outlook_net_tone": 4.9},
+                active_risk_flags=[],
+            )
+        )
+        self.assertFalse(
+            policy_supported_oversold_reentry_signal(
+                {**oversold, "low_vol_breadth_rollover_flag": 1.0},
+                active_risk_flags=[],
+            )
+        )
+        self.assertFalse(
+            policy_supported_oversold_reentry_signal(
+                oversold,
+                active_risk_flags=["domestic_liquidity_stress_flag"],
+            )
+        )
+        breadth_repaired = {
+            **oversold,
+            "pboc_outlook_net_tone": 0.0,
+            "breadth_return_1m_positive": 1.0,
+            "basket_return_1m": 0.02,
+            "selected_etf_drawdown_3m": -0.06,
+        }
+        self.assertTrue(
+            policy_supported_oversold_reentry_signal(
+                breadth_repaired,
+                active_risk_flags=[],
+            )
+        )
+        self.assertFalse(
+            policy_supported_oversold_reentry_signal(
+                {**breadth_repaired, "selected_etf_drawdown_3m": -0.08},
+                active_risk_flags=[],
+            )
+        )
+
     def test_cold_start_price_damage_requires_both_trend_and_drawdown(self) -> None:
         damaged = {
             "selected_etf_momentum_12m_skip1m": -0.20,
@@ -187,6 +262,57 @@ class StrictPassiveEtfObjectiveTest(unittest.TestCase):
         self.assertFalse(
             cold_start_price_damage_signal(
                 {**damaged, "selected_etf_max_drawdown_6m": -0.10}
+            )
+        )
+
+    def test_short_cycle_structural_reentry_requires_visible_local_repair(self) -> None:
+        state = {
+            "cs300_return_3m": -0.06,
+            "basket_return_1m": 0.09,
+            "basket_return_1m_dispersion": 0.075,
+            "basket_return_1m_max": 0.25,
+            "breadth_return_1m_positive": 1.0,
+            "basket_drawdown_3m": -0.035,
+            "selected_etf_momentum_3m": 0.022,
+            "selected_etf_drawdown_3m": -0.004,
+            "basket_vol_3m": 0.218,
+        }
+        self.assertTrue(
+            short_cycle_structural_reentry_signal(
+                state,
+                active_risk_flags=[],
+            )
+        )
+        self.assertFalse(
+            short_cycle_structural_reentry_signal(
+                {**state, "basket_return_1m_dispersion": 0.05},
+                active_risk_flags=[],
+            )
+        )
+
+    def test_short_cycle_structural_reentry_respects_hard_risk_flags(self) -> None:
+        state = {
+            "cs300_return_3m": -0.06,
+            "basket_return_1m": 0.09,
+            "basket_return_1m_dispersion": 0.075,
+            "basket_return_1m_max": 0.25,
+            "breadth_return_1m_positive": 1.0,
+            "basket_drawdown_3m": -0.035,
+            "selected_etf_momentum_3m": 0.022,
+            "selected_etf_drawdown_3m": -0.004,
+            "basket_vol_3m": 0.218,
+            "crisis_continuation_flag": 1.0,
+        }
+        self.assertFalse(
+            short_cycle_structural_reentry_signal(
+                state,
+                active_risk_flags=[],
+            )
+        )
+        self.assertFalse(
+            short_cycle_structural_reentry_signal(
+                {**state, "crisis_continuation_flag": 0.0},
+                active_risk_flags=["daily_margin_rally_flag"],
             )
         )
 
@@ -274,6 +400,26 @@ class StrictPassiveEtfObjectiveTest(unittest.TestCase):
         self.assertTrue(safe_gate_flags_allowed(["market_overheat_flag"], blocked))
         self.assertFalse(
             safe_gate_flags_allowed(["daily_margin_rally_flag"], blocked)
+        )
+
+    def test_safe_gate_pathrisk_blocks_negative_leverage_divergence(self) -> None:
+        self.assertTrue(
+            safe_gate_pathrisk_blocked(
+                ["leverage_macro_divergence_flag"],
+                {"score": -0.11},
+            )
+        )
+        self.assertFalse(
+            safe_gate_pathrisk_blocked(
+                ["leverage_macro_divergence_flag"],
+                {"score": -0.09},
+            )
+        )
+        self.assertFalse(
+            safe_gate_pathrisk_blocked(
+                ["market_overheat_flag"],
+                {"score": -0.20},
+            )
         )
 
     def test_cluster_and_safe_gate_relaxations_take_the_declared_maximum(self) -> None:
@@ -437,6 +583,539 @@ class StrictPassiveEtfObjectiveTest(unittest.TestCase):
         missing = dict(strong)
         missing.pop("basket_drawdown_6m")
         self.assertEqual(direct_blend_share(policy, missing), 0.35)
+
+    def test_structural_mainline_conditional_blend_uses_point_in_time_state(self) -> None:
+        policy = next(
+            item
+            for item in DIRECT_ETF_POLICIES
+            if item.name == "blend_index_structural_mainline_top5_cond_w10"
+        )
+        structural = {
+            "cs300_return_3m": -0.02,
+            "basket_return_3m_dispersion": 0.10,
+            "basket_return_3m_max": 0.12,
+            "breadth_return_3m_positive": 0.58,
+            "basket_drawdown_6m": -0.08,
+        }
+        self.assertEqual(direct_blend_share(policy, structural), 0.10)
+        self.assertEqual(
+            direct_blend_share(policy, dict(structural, cs300_return_3m=0.08)),
+            0.0,
+        )
+        self.assertEqual(
+            direct_blend_share(
+                policy,
+                dict(structural, crisis_continuation_flag=1.0),
+            ),
+            0.0,
+        )
+        missing = dict(structural)
+        missing.pop("basket_return_3m_dispersion")
+        self.assertEqual(direct_blend_share(policy, missing), 0.0)
+
+    def test_structural_repair_share_is_encoded_in_policy_name(self) -> None:
+        self.assertEqual(
+            structural_repair_share_from_policy(
+                "blend_index_weighted_stable_v9_structural_repair_top5_s05_regime_w49_s92"
+            ),
+            0.05,
+        )
+        self.assertEqual(
+            structural_repair_share_from_policy(
+                "blend_index_weighted_stable_v9_structural_repair_top5_s20_regime_w49_s92"
+            ),
+            0.20,
+        )
+        self.assertEqual(
+            structural_repair_share_from_policy(
+                "blend_index_weighted_stable_v9_structural_flow_repair_top5_s05_regime_w49_s92"
+            ),
+            0.05,
+        )
+        self.assertEqual(
+            structural_repair_share_from_policy(
+                "blend_index_weighted_stable_v9_structural_flow_repair_top10_s05_regime_w49_s92"
+            ),
+            0.05,
+        )
+        structural = {
+            "cs300_return_3m": -0.02,
+            "basket_return_3m_dispersion": 0.10,
+            "basket_return_3m_max": 0.12,
+            "breadth_return_3m_positive": 0.58,
+            "basket_drawdown_6m": -0.08,
+        }
+        cond_name = (
+            "blend_index_weighted_stable_v9_structural_flow_repair_top5"
+            "_s05_cond20_regime_w49_s92"
+        )
+        self.assertEqual(
+            structural_repair_share_from_policy(cond_name, structural),
+            0.20,
+        )
+        self.assertEqual(
+            structural_repair_share_from_policy(
+                cond_name,
+                dict(structural, crisis_continuation_flag=1.0),
+            ),
+            0.05,
+        )
+        wide_name = (
+            "blend_index_weighted_stable_v9_structural_flow_repair_top5"
+            "_s05_widecond35_regime_w49_s92"
+        )
+        wide = {
+            "cs300_return_3m": 0.12,
+            "basket_return_3m_dispersion": 0.04,
+            "basket_return_3m_max": 0.07,
+            "breadth_return_3m_positive": 0.55,
+            "basket_drawdown_6m": -0.08,
+        }
+        self.assertEqual(
+            structural_repair_share_from_policy(wide_name, wide),
+            0.35,
+        )
+        self.assertEqual(
+            structural_repair_share_from_policy(
+                wide_name,
+                dict(wide, basket_drawdown_6m=-0.14),
+            ),
+            0.05,
+        )
+        rotation_name = (
+            "blend_index_weighted_stable_v9_structural_flow_repair_top10"
+            "_s05_rotcond20_regime_w49_s92"
+        )
+        rotation = {
+            "cs300_return_3m": 0.066,
+            "basket_return_3m_dispersion": 0.009,
+            "basket_return_3m_max": 0.108,
+            "breadth_return_3m_positive": 1.0,
+            "basket_drawdown_6m": -0.007,
+            "selected_etf_momentum_3m": 0.063,
+            "selector_score_margin": 0.019,
+        }
+        self.assertEqual(
+            structural_repair_share_from_policy(rotation_name, rotation),
+            0.20,
+        )
+        self.assertEqual(
+            structural_repair_share_from_policy(
+                rotation_name,
+                dict(rotation, domestic_liquidity_stress_flag=1.0),
+            ),
+            0.05,
+        )
+        early_rotation_name = (
+            "blend_index_weighted_stable_v9_structural_flow_repair_top10"
+            "_s05_earlyrotcond50_regime_w49_s92"
+        )
+        self.assertEqual(
+            structural_repair_share_from_policy(early_rotation_name, rotation),
+            0.50,
+        )
+        self.assertEqual(
+            structural_repair_share_from_policy(early_rotation_name, wide),
+            0.05,
+        )
+        self.assertEqual(structural_repair_share_from_policy("unknown"), 0.05)
+        self.assertEqual(
+            structural_repair_top_n_from_policy(
+                "blend_index_weighted_stable_v9_structural_flow_repair_top10_s05_regime_w49_s92"
+            ),
+            10,
+        )
+        self.assertEqual(structural_repair_top_n_from_policy("unknown"), 5)
+        self.assertEqual(
+            healthcare_resilience_share_from_policy(
+                "blend_index_weighted_stable_v9_structural_conditional_repair_top3_s10_rotcond35_hcres50_shockres100_earlyres50_regime_w49_s92"
+            ),
+            0.50,
+        )
+        self.assertEqual(
+            structural_repair_top_n_from_policy(
+                "blend_index_weighted_stable_v9_structural_multistate_repair_top3_s10_rotcond35_hcres100_shockres100_earlyres50_regime_w49_s92"
+            ),
+            3,
+        )
+        structural_blend_name = (
+            "blend_index_weighted_stable_v9_structural_multistate_repair_top3"
+            "_s10_rotcond35_hcres100_structblend70_shockres100_earlyres50_regime_w49_s92"
+        )
+        self.assertEqual(
+            structural_direct_blend_share_from_policy(structural_blend_name),
+            0.70,
+        )
+        self.assertIsNone(structural_direct_blend_share_from_policy("unknown"))
+        self.assertIn(
+            structural_blend_name,
+            {policy.name for policy in DIRECT_ETF_POLICIES},
+        )
+        self.assertIsNone(healthcare_resilience_share_from_policy("unknown"))
+
+        policy = next(
+            policy
+            for policy in DIRECT_ETF_POLICIES
+            if policy.name == structural_blend_name
+        )
+        self.assertEqual(direct_blend_share(policy, rotation), 0.70)
+        self.assertEqual(
+            direct_blend_share(policy, dict(rotation, domestic_liquidity_stress_flag=1.0)),
+            0.49,
+        )
+        broad_rotation = dict(rotation, selected_etf_momentum_3m=0.021)
+        self.assertEqual(direct_blend_share(policy, broad_rotation), 0.70)
+        weak_rotation = dict(rotation, selected_etf_momentum_3m=0.019)
+        self.assertEqual(direct_blend_share(policy, weak_rotation), 0.49)
+        exhaustion_blend_name = (
+            "blend_index_weighted_stable_v9_structural_multistate_repair_top3"
+            "_s10_rotcond35_hcres100_structblend85_exhaustfallback"
+            "_shockres100_earlyres50_regime_w49_s92"
+        )
+        self.assertEqual(
+            structural_direct_blend_share_from_policy(exhaustion_blend_name),
+            0.85,
+        )
+        self.assertIn(
+            exhaustion_blend_name,
+            {candidate.name for candidate in DIRECT_ETF_POLICIES},
+        )
+        late_cycle_blend_name = (
+            "blend_index_weighted_stable_v9_structural_latecycle_repair_top3"
+            "_s10_rotcond35_hcres100_structblend85_exhaustfallback"
+            "_shockres100_earlyres50_regime_w49_s92"
+        )
+        self.assertEqual(
+            structural_repair_top_n_from_policy(late_cycle_blend_name),
+            3,
+        )
+        self.assertEqual(
+            structural_direct_blend_share_from_policy(late_cycle_blend_name),
+            0.85,
+        )
+        self.assertIn(
+            late_cycle_blend_name,
+            {candidate.name for candidate in DIRECT_ETF_POLICIES},
+        )
+        late_cycle_pure_name = (
+            "blend_index_weighted_stable_v9_structural_latecycle_repair_top3"
+            "_s20_rotcond50_hcres100_structblend85_purestruct_exhaustfallback"
+            "_shockres100_earlyres50_regime_w49_s92"
+        )
+        self.assertEqual(
+            structural_repair_top_n_from_policy(late_cycle_pure_name),
+            3,
+        )
+        self.assertEqual(
+            structural_direct_blend_share_from_policy(late_cycle_pure_name),
+            0.85,
+        )
+        self.assertIn(
+            late_cycle_pure_name,
+            {candidate.name for candidate in DIRECT_ETF_POLICIES},
+        )
+        late_cycle_cond_name = (
+            "blend_index_weighted_stable_v9_structural_latecycle_repair_top3"
+            "_s20_rotcond50_hcres100_structblend85_purestructcond_exhaustfallback"
+            "_shockres100_earlyres50_regime_w49_s92"
+        )
+        self.assertEqual(
+            structural_repair_top_n_from_policy(late_cycle_cond_name),
+            3,
+        )
+        self.assertEqual(
+            structural_direct_blend_share_from_policy(late_cycle_cond_name),
+            0.85,
+        )
+        self.assertIn(
+            late_cycle_cond_name,
+            {candidate.name for candidate in DIRECT_ETF_POLICIES},
+        )
+        cold_start_name = (
+            "blend_index_weighted_stable_v9_structural_latecycle_repair_top3"
+            "_s20_rotcond50_hcres100_structblend85_purestructcond_coldstart"
+            "_exhaustfallback_shockres100_earlyres50_regime_w49_s92"
+        )
+        self.assertIn(
+            cold_start_name,
+            {candidate.name for candidate in DIRECT_ETF_POLICIES},
+        )
+        finance_defensive_name = (
+            "blend_index_weighted_stable_v9_structural_latecycle_techpullback_repair_top3"
+            "_s20_rotcond50_hcres100_hcblend85_neres100_neblend85_drotres100"
+            "_drotblend85_findefres100_structblend85_purestructcond_coldstart"
+            "_exhaustfallback_shockres100_earlyres50_regime_w49_s92"
+        )
+        self.assertEqual(
+            structural_repair_top_n_from_policy(finance_defensive_name),
+            3,
+        )
+        self.assertEqual(
+            structural_direct_blend_share_from_policy(finance_defensive_name),
+            0.85,
+        )
+        self.assertIn(
+            finance_defensive_name,
+            {candidate.name for candidate in DIRECT_ETF_POLICIES},
+        )
+        participation_reentry_name = "q_mdd20_qfree_stack_highdist800_partreentry50"
+        self.assertIn(
+            participation_reentry_name,
+            {candidate.name for candidate in RULES},
+        )
+        policycat_name = (
+            "blend_index_weighted_stable_v9_structural_policycat_repair_top3"
+            "_s20_rotcond50_hcres100_structblend85_exhaustfallback"
+            "_shockres100_earlyres50_regime_w49_s92"
+        )
+        self.assertEqual(structural_repair_top_n_from_policy(policycat_name), 3)
+        self.assertEqual(
+            structural_direct_blend_share_from_policy(policycat_name),
+            0.85,
+        )
+        self.assertIn(
+            policycat_name,
+            {candidate.name for candidate in DIRECT_ETF_POLICIES},
+        )
+        cooling_repair_name = (
+            "blend_index_weighted_stable_v9_structural_cooling_repair_top3"
+            "_s00_rotcond100_structblend85_shockres100_earlyres50_regime_w49_s92"
+        )
+        self.assertIn(
+            cooling_repair_name,
+            {candidate.name for candidate in DIRECT_ETF_POLICIES},
+        )
+        self.assertEqual(structural_repair_top_n_from_policy(cooling_repair_name), 3)
+        self.assertEqual(structural_repair_share_from_policy(cooling_repair_name), 0.0)
+        self.assertEqual(
+            structural_repair_share_from_policy(cooling_repair_name, broad_rotation),
+            1.0,
+        )
+        cooling_repair_half_name = cooling_repair_name.replace(
+            "_rotcond100_",
+            "_rotcond50_",
+        )
+        self.assertEqual(
+            structural_repair_share_from_policy(
+                cooling_repair_half_name,
+                broad_rotation,
+            ),
+            0.50,
+        )
+        cooling_repair_no_override_name = (
+            "blend_index_weighted_stable_v9_structural_cooling_repair_top3"
+            "_s00_rotcond50_structblend85_regime_w49_s92"
+        )
+        self.assertIn(
+            cooling_repair_no_override_name,
+            {candidate.name for candidate in DIRECT_ETF_POLICIES},
+        )
+        self.assertEqual(
+            structural_repair_share_from_policy(
+                cooling_repair_no_override_name,
+                broad_rotation,
+            ),
+            0.50,
+        )
+        cooling_policy = next(
+            candidate
+            for candidate in DIRECT_ETF_POLICIES
+            if candidate.name == cooling_repair_name
+        )
+        self.assertEqual(direct_blend_share(cooling_policy, broad_rotation), 0.85)
+        exhaustion_policy = next(
+            candidate
+            for candidate in DIRECT_ETF_POLICIES
+            if candidate.name == exhaustion_blend_name
+        )
+        exhaustion_setup = {
+            "cs300_return_3m": -0.02,
+            "basket_return_3m_max": 0.12,
+            "breadth_return_3m_positive": 0.40,
+            "basket_drawdown_6m": -0.08,
+            "selector_score_margin": 0.04,
+        }
+        self.assertEqual(direct_blend_share(exhaustion_policy, exhaustion_setup), 0.85)
+        self.assertEqual(
+            direct_blend_share(
+                exhaustion_policy,
+                dict(exhaustion_setup, breadth_return_3m_positive=0.80),
+            ),
+            0.49,
+        )
+        self.assertEqual(
+            direct_blend_share(
+                exhaustion_policy,
+                dict(exhaustion_setup, selector_score_margin=0.01),
+            ),
+            0.49,
+        )
+
+    def test_pure_structural_rotation_guard_filters_weak_downtrend(self) -> None:
+        weak_downtrend = {
+            "basket_return_3m_max": 0.007,
+            "breadth_return_3m_positive": 0.25,
+            "basket_drawdown_6m": -0.10,
+            "basket_vol_3m": 0.27,
+        }
+        self.assertFalse(pure_structural_rotation_active(weak_downtrend))
+        strong_structure = {
+            "basket_return_3m_max": 0.15,
+            "breadth_return_3m_positive": 1.0,
+            "basket_drawdown_6m": -0.04,
+            "basket_vol_3m": 0.22,
+        }
+        self.assertTrue(pure_structural_rotation_active(strong_structure))
+
+    def test_broad_participation_reentry_blocks_distribution_risk(self) -> None:
+        market_state = {
+            "basket_return_3m_max": 0.22,
+            "breadth_return_3m_positive": 0.90,
+            "basket_drawdown_6m": -0.03,
+            "basket_vol_3m": 0.24,
+        }
+        self.assertTrue(
+            broad_participation_reentry_signal(
+                market_state,
+                active_risk_flags=["domestic_liquidity_stress_flag"],
+            )
+        )
+        self.assertFalse(
+            broad_participation_reentry_signal(
+                market_state,
+                active_risk_flags=["daily_margin_rally_flag"],
+            )
+        )
+        self.assertFalse(
+            broad_participation_reentry_signal(
+                dict(market_state, basket_drawdown_6m=-0.08),
+                active_risk_flags=[],
+            )
+        )
+
+    def test_structural_price_cold_start_scores_are_point_in_time(self) -> None:
+        snapshot = date(2023, 2, 28)
+        metas_by_index = {
+            "ai": [
+                EquityEtfMeta(
+                    "515070.SH",
+                    "人工智能ETF华夏",
+                    "930713.CSI",
+                    "中证人工智能主题指数",
+                    date(2019, 12, 24),
+                    date(2019, 12, 24),
+                )
+            ],
+            "bond": [
+                EquityEtfMeta(
+                    "511270.SH",
+                    "10年地方债ETF海富通",
+                    "931161.CSI",
+                    "10年地方债指数",
+                    date(2018, 11, 22),
+                    date(2018, 11, 22),
+                )
+            ],
+            "old": [
+                EquityEtfMeta(
+                    "512930.SH",
+                    "AI人工智能ETF平安",
+                    "930713.CSI",
+                    "中证人工智能主题指数",
+                    date(2019, 8, 23),
+                    date(2019, 8, 23),
+                )
+            ],
+            "extended": [
+                EquityEtfMeta(
+                    "512560.SH",
+                    "军工ETF易方达",
+                    "399967.SZ",
+                    "中证军工指数",
+                    date(2019, 7, 5),
+                    date(2019, 7, 5),
+                )
+            ],
+        }
+        series = {
+            "515070.SH": [
+                (snapshot - timedelta(days=offset), 1.0 + (90 - offset) * 0.002)
+                for offset in range(90, -1, -1)
+            ],
+            "511270.SH": [
+                (snapshot - timedelta(days=offset), 1.0 + (90 - offset) * 0.001)
+                for offset in range(90, -1, -1)
+            ],
+            "512930.SH": [
+                (snapshot - timedelta(days=offset), 1.0 + (90 - offset) * 0.002)
+                for offset in range(90, -1, -1)
+            ],
+            "512560.SH": [
+                (
+                    snapshot - timedelta(days=offset),
+                    1.0
+                    + (130 - offset) * 0.005
+                    + (0.025 if (130 - offset) % 2 else -0.025),
+                )
+                for offset in range(130, -1, -1)
+            ],
+        }
+        scores = structural_price_cold_start_scores(
+            metas_by_index,
+            series,
+            snapshot,
+            excluded_codes={"512930.SH"},
+        )
+        self.assertIn("515070.SH", scores)
+        self.assertNotIn("511270.SH", scores)
+        self.assertNotIn("512930.SH", scores)
+        self.assertNotIn("512560.SH", scores)
+
+    def test_structural_cold_start_blocks_short_history_hot_semiconductor(self) -> None:
+        snapshot = date(2023, 3, 31)
+        days = [snapshot - timedelta(days=offset) for offset in range(80, -1, -1)]
+        metas_by_index = {
+            "semiconductor": [
+                EquityEtfMeta(
+                    "588290.SH",
+                    "科创芯片ETF华安",
+                    "000001.SH",
+                    "上证科创板芯片指数",
+                    snapshot - timedelta(days=90),
+                    snapshot - timedelta(days=80),
+                )
+            ],
+            "communication": [
+                EquityEtfMeta(
+                    "159994.SZ",
+                    "通信ETF银华",
+                    "000002.SH",
+                    "中证全指通信设备指数",
+                    snapshot - timedelta(days=200),
+                    snapshot - timedelta(days=180),
+                )
+            ],
+        }
+        semiconductor_prices = []
+        communication_prices = []
+        semiconductor_price = 100.0
+        communication_price = 100.0
+        for index, day in enumerate(days):
+            if index:
+                semiconductor_price *= 1.022 if index % 2 else 0.994
+                communication_price *= 1.020 if index % 2 else 0.994
+            semiconductor_prices.append((day, semiconductor_price))
+            communication_prices.append((day, communication_price))
+        scores = structural_price_cold_start_scores(
+            metas_by_index,
+            {
+                "588290.SH": semiconductor_prices,
+                "159994.SZ": communication_prices,
+            },
+            snapshot,
+        )
+        self.assertNotIn("588290.SH", scores)
+        self.assertIn("159994.SZ", scores)
 
     def test_market_recovery_requires_all_configured_trend_confirmations(self) -> None:
         state = {
@@ -618,6 +1297,32 @@ class StrictPassiveEtfObjectiveTest(unittest.TestCase):
                 }
             ),
             "correction",
+        )
+
+    def test_option_panic_after_rally_cap_signal_requires_supported_high_vol_rally(self) -> None:
+        market_state = {
+            "cs300_return_3m": 0.006,
+            "cs300_return_6m": 0.16,
+            "basket_return_1m": 0.076,
+            "basket_drawdown_6m": -0.064,
+            "basket_vol_3m": 0.317,
+            "pboc_outlook_net_tone": 25.0,
+            "domestic_m1_m2_scissors_change_3m": 7.0,
+        }
+        self.assertTrue(
+            option_panic_after_rally_cap_signal(
+                market_state,
+                ["option_panic_after_rally_flag"],
+            )
+        )
+
+        weak_policy = dict(market_state)
+        weak_policy["pboc_outlook_net_tone"] = -5.0
+        self.assertFalse(
+            option_panic_after_rally_cap_signal(
+                weak_policy,
+                ["option_panic_after_rally_flag"],
+            )
         )
 
     def test_full_case_matrix_requires_every_phase_and_lag(self) -> None:

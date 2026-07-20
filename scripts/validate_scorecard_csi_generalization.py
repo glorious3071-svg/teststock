@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sys
+from bisect import bisect_right
 from calendar import monthrange
 from dataclasses import asdict, dataclass
 from datetime import date
@@ -212,6 +213,7 @@ _BOUNDARY_RETURN_CACHE: dict[tuple[str, date, date], float] = {}
 _SCORECARD_DETAIL_CACHE: dict[tuple[int, date], dict[str, Any]] = {}
 _LATEST_TRADE_DATE_CACHE: date | None = None
 _SCHEDULE_EXECUTION_CACHE: dict[tuple[date, int], date] = {}
+_EXECUTION_TRADE_DATES_CACHE: list[date] | None = None
 
 
 def month_end(year: int, month: int) -> date:
@@ -271,15 +273,26 @@ def latest_trade_date(cur) -> date:
 
 
 def has_complete_execution_boundary(cur, boundary: date, lag_days: int) -> bool:
-    cur.execute(
-        """
-        SELECT trade_date FROM index_daily
-        WHERE ts_code=%s AND trade_date > %s
-        ORDER BY trade_date ASC LIMIT 1 OFFSET %s
-        """,
-        (CS300_CODE, boundary, lag_days),
-    )
-    return cur.fetchone() is not None
+    trade_dates = execution_trade_dates(cur)
+    index = bisect_right(trade_dates, boundary) + lag_days
+    return index < len(trade_dates)
+
+
+def execution_trade_dates(cur) -> list[date]:
+    global _EXECUTION_TRADE_DATES_CACHE
+    if _EXECUTION_TRADE_DATES_CACHE is None:
+        cur.execute(
+            """
+            SELECT trade_date FROM index_daily
+            WHERE ts_code=%s
+            ORDER BY trade_date ASC
+            """,
+            (CS300_CODE,),
+        )
+        _EXECUTION_TRADE_DATES_CACHE = [row[0] for row in cur.fetchall()]
+        if not _EXECUTION_TRADE_DATES_CACHE:
+            raise RuntimeError(f"No index_daily coverage for {CS300_CODE}")
+    return _EXECUTION_TRADE_DATES_CACHE
 
 
 def schedule_execution_boundary(cur, snapshot: date, lag_days: int) -> date:
@@ -287,21 +300,15 @@ def schedule_execution_boundary(cur, snapshot: date, lag_days: int) -> date:
     key = (snapshot, lag_days)
     if key in _SCHEDULE_EXECUTION_CACHE:
         return _SCHEDULE_EXECUTION_CACHE[key]
-    cur.execute(
-        """
-        SELECT trade_date FROM index_daily
-        WHERE ts_code=%s AND trade_date > %s
-        ORDER BY trade_date ASC LIMIT 1 OFFSET %s
-        """,
-        (CS300_CODE, snapshot, lag_days),
-    )
-    row = cur.fetchone()
-    if not row:
+    trade_dates = execution_trade_dates(cur)
+    index = bisect_right(trade_dates, snapshot) + lag_days
+    if index >= len(trade_dates):
         raise RuntimeError(
             f"Incomplete execution boundary for snapshot={snapshot} lag_days={lag_days}"
         )
-    _SCHEDULE_EXECUTION_CACHE[key] = row[0]
-    return row[0]
+    boundary = trade_dates[index]
+    _SCHEDULE_EXECUTION_CACHE[key] = boundary
+    return boundary
 
 
 def complete_schedule_anchor(

@@ -34,6 +34,7 @@ class DefensivePolicy:
     bond_top_n: int = 1
     commodity_max_weight: float = 0.0
     commodity_min_return: float = 0.0
+    gold_candidate_lookback_days: int | None = None
 
 
 NO_DEFENSIVE_ETF = DefensivePolicy("cash_only", 126, 21, 0.0)
@@ -212,6 +213,23 @@ DEFENSIVE_POLICIES = (
     ),
     DefensivePolicy("bond_gold50_252d", 252, 21, 0.50),
     DefensivePolicy("bond_gold65_252d", 252, 21, 0.65),
+    DefensivePolicy("bond_gold80_252d", 252, 21, 0.80),
+    DefensivePolicy("bond_gold100_252d", 252, 21, 1.00),
+    DefensivePolicy(
+        "bond_gold65_252d_earlygold63",
+        252,
+        21,
+        0.65,
+        gold_candidate_lookback_days=63,
+    ),
+    DefensivePolicy(
+        "bond_gold65_252d_earlygold63_min-120",
+        252,
+        21,
+        0.65,
+        gold_min_return=-0.12,
+        gold_candidate_lookback_days=63,
+    ),
 )
 
 
@@ -328,7 +346,13 @@ def select_defensive_weights(
     for code, meta in metas.items():
         if meta.first_trade_date > snapshot:
             continue
-        values = _history(series[code], snapshot, policy.lookback_days)
+        lookback_days = (
+            policy.gold_candidate_lookback_days
+            if meta.category == "gold"
+            and policy.gold_candidate_lookback_days is not None
+            else policy.lookback_days
+        )
+        values = _history(series[code], snapshot, lookback_days)
         if values is None:
             continue
         score, trailing_return = _score(values, policy.volatility_penalty)
